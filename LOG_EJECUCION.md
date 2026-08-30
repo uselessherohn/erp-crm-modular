@@ -628,6 +628,41 @@ vertical y podrían construirse en cualquier momento).
 
 ---
 
+---
+
+## BRANDING — Renombrado del producto a "Axis Suite" + configuración como PWA
+
+Fuera del ciclo de construcción de módulos (spec/plantilla), a pedido directo del usuario:
+
+- Recibí ícono y logo en SVG (`axis-suite-icon.svg` — cuadrado redondeado azul cobalto
+  #1D5FA8 con una "A" blanca y acento cian; `axis-suite-logo.svg` — mismo ícono + wordmark
+  "axis suite"). Los copié a `frontend/public/` y reemplacé el favicon existente (un ícono
+  morado abstracto sin relación con el proyecto, aparentemente un placeholder de plantilla).
+- Generé PNGs desde el SVG del ícono con `cairosvg`: `icon-192.png`, `icon-512.png` (purpose
+  "any"), y `icon-512-maskable.png` (ícono renderizado al 70% del lienzo, centrado sobre
+  fondo sólido del mismo azul de marca — respeta la "safe zone" ~80% que exige Android para
+  no recortar la "A" al aplicar máscaras circulares/squircle).
+- Instalé `vite-plugin-pwa` y configuré `vite.config.ts`: manifest completo (name/short_name
+  "Axis Suite", lang "es", theme_color #1D5FA8, display "standalone", los 3 íconos),
+  `registerType: 'autoUpdate'`. Sin runtime caching de rutas de API (`navigateFallbackDenylist`
+  cubre todos los prefijos de router del backend) — decisión deliberada: los datos del ERP
+  (saldos, stock, RLS multi-tenant) no deben servirse desde caché.
+- Actualicé `index.html` (título "Axis Suite", favicon, apple-touch-icon, meta theme-color),
+  `package.json` (`name: "axis-suite-frontend"`), y reemplacé el placeholder "Núcleo" —
+  encontrado hardcodeado en dos lugares (`AppLayout.tsx` sidebar header, `LoginPage.tsx`
+  título) — por el ícono+wordmark real de Axis Suite. Confirmé por `grep` que no había más
+  ocurrencias del nombre viejo ni tests que dependieran de ese texto.
+- Verificado real: `npm run build` genera `dist/manifest.webmanifest` (contenido confirmado
+  correcto), `dist/sw.js`, `dist/workbox-*.js`, y copia los 3 PNGs + 2 SVGs a la raíz de
+  `dist/`. `npx tsc --noEmit` limpio.
+- `pytest tests/` → 50/50 sin regresión (cambios son 100% frontend). `npx vitest run` (suite
+  completa) → **14 archivos, 22/22 tests**, incluido `LoginPage.integration.test.tsx` sin
+  romperse pese a reemplazar su `<h1>` por una imagen (confirmé antes que ningún test
+  dependía de ese elemento). Una corrida intermedia mostró la misma intermitencia ya
+  documentada de `AccountsPage` bajo carga del sandbox — resuelta al reintentar sin cambios.
+
+---
+
 ## Limitaciones de red del sandbox, documentadas explícitamente durante el proyecto
 - `ui.shadcn.com` no disponible → componentes UI escritos a mano sobre Radix.
 - `cdn.playwright.dev` no disponible → Vitest+jsdom como sustituto de E2E real en navegador

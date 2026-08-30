@@ -1,5 +1,13 @@
 # STATE.md — ERP/CRM v10.4 — Roberto (proyecto de referencia, sin cliente final asignado aún)
 
+> **Nota de branding (fuera del ciclo de módulos)**: el producto se
+> comercializa como **"Axis Suite"** — frontend renombrado (título,
+> favicon, sidebar, login), configurado como PWA instalable
+> (`vite-plugin-pwa`, ver `LOG_EJECUCION.md` sección "BRANDING"). No
+> afecta contratos de API, modelos, ni la tabla de módulos — es
+> puramente presentación del frontend.
+
+
 ## 0. HALLAZGO CRÍTICO retroactivo — leer antes de tocar cualquier servicio
 
 **`app/database.py` tenía un bug real de aislamiento RLS bajo connection

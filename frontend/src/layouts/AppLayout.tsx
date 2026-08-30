@@ -40,9 +40,10 @@ export function AppLayout() {
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-56 flex-col border-r border-border bg-card">
-        <div className="border-b border-border px-4 py-5">
+        <div className="flex items-center gap-2 border-b border-border px-4 py-5">
+          <img src="/axis-suite-icon.svg" alt="" className="size-7 shrink-0" />
           <span className="font-display text-lg font-medium text-primary" style={{ fontFamily: "var(--font-display)" }}>
-            Núcleo
+            Axis Suite
           </span>
         </div>
         <nav className="flex-1 space-y-1 p-3">

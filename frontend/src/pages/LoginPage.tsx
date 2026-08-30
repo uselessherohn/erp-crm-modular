@@ -45,9 +45,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="font-display text-4xl font-medium tracking-tight text-primary" style={{ fontFamily: "var(--font-display)" }}>
-            Núcleo
-          </h1>
+          <img src="/axis-suite-logo.svg" alt="Axis Suite" className="mx-auto h-24 w-auto" />
           <p className="mt-1 text-sm text-muted-foreground">Panel de gestión</p>
         </div>
 

@@ -1,6 +1,7 @@
-# ERP/CRM Modular por Paquetes — v10.4
+# Axis Suite — ERP/CRM Modular por Paquetes v10.4
 
-Sistema ERP/CRM modular construido incrementalmente, módulo por módulo, con
+Sistema ERP/CRM modular, comercializado bajo el nombre **Axis Suite**,
+construido incrementalmente, módulo por módulo, con
 verificación real en cada cierre (Postgres real, backend real corriendo,
 sin mocks). Este README es un resumen legible para humanos; el detalle
 técnico completo vive en `STATE.md` (estado actual, para retomar en una
@@ -27,6 +28,20 @@ paquete Administrativo está completo**:
 Los paquetes Médico, Farmacéutico y Web, y los módulos transversales
 (reports, audit completo, notifications), todavía no se empezaron —
 son el siguiente paso natural del proyecto.
+
+## Marca e instalación como PWA
+
+El frontend usa la marca **Axis Suite** (ícono y logo en
+`frontend/public/axis-suite-icon.svg` y `axis-suite-logo.svg`) y está
+configurado como Progressive Web App vía `vite-plugin-pwa`
+(`frontend/vite.config.ts`): manifest con íconos 192/512 y una variante
+maskable, `theme_color` #1D5FA8, `display: standalone`. Al visitar el
+sitio compilado (`npm run build && npm run preview`, o el deploy real)
+desde Chrome/Edge/Android, el navegador ofrece "Instalar app"
+automáticamente. El service worker (`workbox`) precachea el shell
+estático de la SPA pero **no** cachea rutas de API — los datos siempre
+se piden frescos al backend (necesario dado el aislamiento multi-tenant
+por RLS y los saldos de stock/facturas que cambian constantemente).
 
 ## Cómo verificar que todo funciona
 
