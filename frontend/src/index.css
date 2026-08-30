@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/*
+  Sistema de tokens — Nucleo ERP/CRM (panel interno, detras de login).
+  No es una landing page: la prioridad es legibilidad en tablas densas
+  durante turnos largos (ferreteria, farmacia, clinica). El unico momento
+  de personalidad deliberada vive en la pantalla de login (--font-display);
+  el resto es utilitario y silencioso a proposito.
+
+  Paleta: "pino" (verde-azulado oscuro) como color de marca -- evita el
+  cliche crema+terracota y el cliche negro+neon. Fondo papel frio (no
+  blanco puro, no crema) para reducir fatiga visual en jornadas largas.
+  Ambar reservado exclusivamente para alertas (bajo stock, vencimientos) --
+  nunca decorativo, asi el color mantiene significado real.
+*/
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+
+  --color-background: oklch(0.98 0.004 90);
+  --color-foreground: oklch(0.22 0.02 250);
+
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.22 0.02 250);
+
+  --color-primary: oklch(0.32 0.05 175);
+  --color-primary-foreground: oklch(0.98 0.004 90);
+
+  --color-secondary: oklch(0.94 0.01 175);
+  --color-secondary-foreground: oklch(0.28 0.03 175);
+
+  --color-muted: oklch(0.95 0.005 90);
+  --color-muted-foreground: oklch(0.48 0.02 250);
+
+  --color-accent: oklch(0.75 0.15 75);
+  --color-accent-foreground: oklch(0.2 0.03 75);
+
+  --color-destructive: oklch(0.55 0.22 25);
+  --color-destructive-foreground: oklch(0.98 0.004 90);
+
+  --color-border: oklch(0.89 0.008 90);
+  --color-input: oklch(0.89 0.008 90);
+  --color-ring: oklch(0.32 0.05 175);
+
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}

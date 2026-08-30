@@ -1,0 +1,48 @@
+{
+  "_meta": {
+    "version": "10.4",
+    "descripcion": "Fuente única de la tabla de módulos y dependencias del ERP/CRM Modular por Paquetes. spec_erp_crm_v10_4.md (sección 2.5) y plantilla_modulos_erp_crm_v10_4.md (tabla de módulos) deben ser consistentes con este archivo — ante cualquier discrepancia, gana este JSON, y la corrección se aplica primero acá.",
+    "nota_v10_4": "Antes de v10.4 la tabla vivía duplicada, en prosa markdown, en ambos documentos. La corrección del módulo 15 en v10.1 (dependencia '9,19' -> '9,22') tuvo que aplicarse a mano en ambos lugares; esta fuente única elimina ese riesgo de desincronización hacia adelante.",
+    "nota_core_extendido": "Este JSON no incluye un campo booleano [core]/[extendido] por módulo. La clasificación [core]/[extendido] de la spec opera a nivel de feature dentro de cada módulo (sección 8.x), no a nivel de módulo completo — varios módulos (ej. el 17, que agrupa 'Sustancias Controladas [core]' e 'Interacciones [extendido]') mezclan ambos en el mismo módulo de construcción. Un campo aquí que solo pudiera decir 'sí/no' por módulo sería inexacto para esos casos. Ver spec_erp_crm_v10_4.md sección 8.x para la clasificación real, feature por feature."
+  },
+  "modulos": [
+    { "id": 1,  "paquete": "Núcleo",        "nombre": "core (usuarios, permisos, empresa, adjuntos, paquetes/feature flags, audit mínimo + trigger de inmutabilidad, idempotency_keys)", "depende_de": [], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 2,  "paquete": "Núcleo",        "nombre": "contacts (Contact unificado)", "depende_de": [1], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 3,  "paquete": "Administrativo","nombre": "inventory (incluye mínimo que arrastran Farmacéutico/ecommerce)", "depende_de": [1, 2], "depende_opcional_de": [], "complejidad": "Media-Alta" },
+    { "id": 4,  "paquete": "Administrativo","nombre": "purchasing", "depende_de": [1, 2, 3], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 5,  "paquete": "Administrativo","nombre": "sales (incluye mínimo que arrastra ecommerce)", "depende_de": [1, 2, 3], "depende_opcional_de": [], "complejidad": "Alta" },
+    { "id": 6,  "paquete": "Administrativo","nombre": "accounting + motor de asientos (incluye mínimo que arrastran Farmacéutico/ecommerce, y Plan de Cuentas mínimo)", "depende_de": [1, 2, 3, 4, 5], "depende_opcional_de": [], "complejidad": "Alta" },
+    { "id": 7,  "paquete": "Administrativo","nombre": "pipeline de leads/oportunidades sobre contacts", "depende_de": [2, 6], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 8,  "paquete": "Administrativo","nombre": "hr", "depende_de": [1], "depende_opcional_de": [6], "complejidad": "Media-Alta", "nota_dependencia_opcional": "6 solo si el proyecto incluye Nómina" },
+    { "id": 9,  "paquete": "Médico",        "nombre": "medical — expediente, agenda, consulta", "depende_de": [1, 2], "depende_opcional_de": [], "complejidad": "Alta" },
+    { "id": 10, "paquete": "Médico",        "nombre": "medical — recetas", "depende_de": [9], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 11, "paquete": "Médico",        "nombre": "medical — laboratorio", "depende_de": [9], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 12, "paquete": "Médico",        "nombre": "medical — teleconsulta", "depende_de": [9], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 13, "paquete": "Médico",        "nombre": "medical — facturación médica básica", "depende_de": [9], "depende_opcional_de": [6], "complejidad": "Media" },
+    { "id": 14, "paquete": "Médico",        "nombre": "medical — portal/mensajería paciente-médico", "depende_de": [9], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 15, "paquete": "Médico",        "nombre": "medical — reserva pública de citas (widget)", "depende_de": [9, 22], "depende_opcional_de": [], "complejidad": "Media", "nota_historica": "corregido en v10.1: antes decía '9,19' (19 es Farmacéutico/POS, no Web)" },
+    { "id": 16, "paquete": "Farmacéutico",  "nombre": "pharmacy — dispensación + verificación clínica", "depende_de": [1, 2, 3, 6], "depende_opcional_de": [], "complejidad": "Alta", "nota_dependencia": "3 y 6 como mínimos (inventory+accounting), no el Administrativo completo", "es_pos_dispensacion": true },
+    { "id": 17, "paquete": "Farmacéutico",  "nombre": "pharmacy — sustancias controladas + interacciones", "depende_de": [16], "depende_opcional_de": [], "complejidad": "Alta" },
+    { "id": 18, "paquete": "Farmacéutico",  "nombre": "pharmacy — aseguradoras / copagos", "depende_de": [16, 6], "depende_opcional_de": [], "complejidad": "Media" },
+    { "id": 19, "paquete": "Farmacéutico",  "nombre": "pharmacy — POS farmacia", "depende_de": [16], "depende_opcional_de": [], "complejidad": "Media", "es_pos_dispensacion": true },
+    { "id": 20, "paquete": "Farmacéutico",  "nombre": "pharmacy — reposición a droguerías", "depende_de": [16], "depende_opcional_de": [4], "complejidad": "Baja-Media" },
+    { "id": 21, "paquete": "Farmacéutico",  "nombre": "pharmacy — MTM / consulta farmacéutica", "depende_de": [16], "depende_opcional_de": [6], "complejidad": "Media" },
+    { "id": 22, "paquete": "Web",           "nombre": "website (CMS, formularios)", "depende_de": [1, 2], "depende_opcional_de": [], "complejidad": "Media", "nota": "el catálogo con stock real vive en ecommerce (módulo 23), no aquí; no requiere inventory" },
+    { "id": 23, "paquete": "Web",           "nombre": "ecommerce (carrito, checkout, pagos)", "depende_de": [22, 3, 5, 6], "depende_opcional_de": [], "complejidad": "Alta", "nota_dependencia": "3, 5, 6 como mínimos (inventory+sales+accounting), siempre los tres juntos" },
+    { "id": 24, "paquete": "Transversal",   "nombre": "reports", "depende_de": [], "depende_opcional_de": [], "complejidad": "Media", "nota": "depende de los módulos ya construidos que quiera cruzar, no de una lista fija" },
+    { "id": 25, "paquete": "Transversal",   "nombre": "audit completo (UI, retención configurable, reportería)", "depende_de": [1], "depende_opcional_de": [], "complejidad": "Baja-Media", "nota": "el audit mínimo ya se construyó en el módulo 1" },
+    { "id": 26, "paquete": "Transversal",   "nombre": "notifications", "depende_de": [1], "depende_opcional_de": [], "complejidad": "Media" }
+  ],
+  "minimal_modules_permitidos": {
+    "pharmacy": ["inventory", "accounting"],
+    "ecommerce": ["inventory", "sales", "accounting"],
+    "website": []
+  },
+  "notas_de_orden": [
+    "Los módulos 9-15 (Médico) y 16-21 (Farmacéutico) no dependen entre sí para construirse — la integración receta→dispensación es opcional y se declara como TODO si el paquete complementario aún no existe.",
+    "Los módulos 14 y 15 (portal/mensajería, reserva pública) son [extendido] — pueden posponerse sin bloquear el resto de Médico.",
+    "notifications, hr, website/ecommerce y medical/pharmacy son postergables sin bloquear el resto — si el cliente no compró esos paquetes, se saltan sin rediseñar lo construido.",
+    "El audit mínimo (tabla + trigger + función de escritura) no es postergable: se construye en el módulo 1 junto con la tabla, para cubrir tanto a Médico como a Farmacéutico sin depender de cuál compre el cliente primero.",
+    "migration no aparece en esta tabla — es un servicio de proyecto opcional con su propio ciclo en spec_migracion_v10_4.md, sección 5."
+  ]
+}
