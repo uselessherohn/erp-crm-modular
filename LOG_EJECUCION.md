@@ -663,7 +663,288 @@ Fuera del ciclo de construcción de módulos (spec/plantilla), a pedido directo 
 
 ---
 
+## MÓDULO 9 — `medical` (Expediente Clínico, Agenda Médica, Consulta) — Fases 1-2 y 4 backend
+
+Sesión de verificación + continuación del sistema de orquestación. Antes de tocar código se
+verificó de forma independiente el avance declarado de los 8 módulos previos: se instaló
+PostgreSQL 16 real en el entorno de ejecución (no estaba disponible al inicio de la sesión),
+se recrearon los roles/base/extensiones documentados en el cierre de `core`, se corrió
+`alembic upgrade head` (10 migraciones, limpio), `pytest tests/` (50/50 contra Postgres real,
+no mockeado), `verify_state.py --db-url` (Nivel 1 completo: trigger de inmutabilidad de
+`audit` e índice único de `idempotency_keys` confirmados en la base real), `npx tsc --noEmit`
+y `npm run build` del frontend (ambos limpios). Conclusión: el estado declarado en README/
+STATE.md era real, no aspiracional.
+
+**Hallazgo de esa verificación, sin relación con `medical`**: `accounting`, `pipeline` y `hr`
+nunca recibieron un archivo de tests backend (`pytest`) propio — su Fase 4 solo cubrió tests
+de integración de frontend (Vitest). El conteo de tests backend se quedó congelado en 50 desde
+el cierre de `sales` y no creció en esos tres módulos. No bloquea a `medical`, queda registrado
+como brecha real de cobertura por si se decide rellenar en el futuro.
+
+- Fase 1-2: `app/medical/{models,schemas,services,routers}.py`. Paciente = `Contact.
+  is_patient=true`, sin entidad `Patient` propia (mismo criterio que "Lead" en `pipeline`,
+  DED-15). "Profesional" = `User` directamente (DED-23, sin entidad `Practitioner`).
+- Primer uso real de `pgcrypto` en el proyecto: cifrado/descifrado explícito con
+  `sqlalchemy.func.pgp_sym_encrypt`/`pgp_sym_decrypt` (sin `TypeDecorator` — se documentó como
+  DED-24 el porqué). Cifrados: `ClinicalRecordEntry.content`, `Consultation.diagnosis_text`/
+  `physical_exam`/`treatment_plan`. En claro: `diagnosis_cie10` (código estandarizado),
+  `Appointment.reason`/`cancellation_reason` (no es diagnóstico ni nota clínica — spec 8.2
+  limita el cifrado explícitamente a esos dos campos).
+- Primer uso real de `EXCLUDE USING gist` (extensión `btree_gist`) para bloqueo de horario:
+  un profesional no puede tener dos citas `scheduled`/`confirmed` que se traslapen. Verificado
+  con concurrencia real (8 inserts simultáneos para el mismo profesional/horario → gana 1).
+- Versionado "nunca se sobrescribe" (spec 8.2): `previous_entry_id` (Expediente),
+  `previous_consultation_id`/`superseded_by_id` (Consulta) — sin endpoints UPDATE/DELETE.
+- **Hallazgo real de Fase 4** (encontrado por los tests, no antes): se intentó primero un
+  índice único parcial (`WHERE superseded_by_id IS NULL`) para garantizar "una consulta
+  vigente por cita". Revienta con `UniqueViolationError` al insertar la corrección, porque un
+  índice único parcial de Postgres no es diferible (`ALTER TABLE ... UNIQUE ... DEFERRABLE` no
+  admite cláusula `WHERE`) — no hay forma de desmarcar la fila anterior antes de que el índice
+  reaccione a la nueva, dentro de la misma transacción. Revertido a favor de bloqueo de fila
+  real (`SELECT ... FOR UPDATE` sobre la cita en `create()`, sobre la consulta anterior en
+  `correct()`) — ver migración `1669f8fbbc6b`, sección revertida documentada in situ.
+- RBAC clínico: `medical:record:read-all`/`medical:consultation:read-all` pasa siempre; sin
+  ese permiso, se exige `...:read-own-patients` Y que el actor tenga al menos una cita con ese
+  paciente (`professional_has_treated`) — chequeo de datos además del permiso, resuelto en el
+  router (`_require_clinical_read`), no expresable como `require_permission` plano.
+- Auditoría: todo acceso de lectura (`GET` de entrada, lista por paciente, consulta) pasa por
+  `AuditService.log_event` con `correlation_id`, sin excepción — verificado con test explícito.
+- Contrato re-congelado: **79 rutas** (68 previas + 11 nuevas de `medical`).
+- `tests/test_medical_module.py`: **15 tests nuevos**, mismo patrón que `sales`/`inventory`
+  (capa de servicio directa contra Postgres real, no HTTP — el RBAC de rutas se deja para la
+  Fase 4 de frontend, igual que en el resto de módulos administrativos). Cubre: cifrado a nivel
+  de fila cruda (2 tests, uno por entidad), versionado sin sobrescritura (Expediente y
+  Consulta), bloqueo de horario con y sin concurrencia real, ciclo completo de cita (confirmar/
+  reprogramar/cancelar), "una consulta por cita"+corrección, consulta requiere cita activa,
+  RBAC "own patients", y aislamiento RLS cross-tenant.
+- Verificación final, desde una base recreada de cero (`DROP DATABASE`→`CREATE DATABASE`→
+  roles/extensiones→`alembic upgrade head`, mismo patrón de verificación limpia usado en
+  cierres previos): **11 migraciones limpio, `pytest tests/` → 65/65** (50 previos + 15 nuevos,
+  sin regresión).
+- **AMB-KEY** (spec 1.1) declarado con default DEDUCIBLE (variable de entorno, sin rotación,
+  sin gestor de secretos — Roberto no ha indicado uno). **AMB-02 sigue abierta**: período de
+  retención regulatoria del log de auditoría clínico, sin confirmación de Roberto.
+- **Fase 3 (frontend) — NO iniciada en esta sesión.** El módulo permanece abierto en STATE.md
+  hasta que el frontend consuma la API y pase su propia Fase 4 de integración.
+
+---
+
+## MÓDULO 9 — `medical`, cierre de Fase 3 (frontend) y del módulo completo
+
+Continuación de la sesión anterior (backend + Fase 4 backend ya cerrados). Antes de tocar
+frontend se regeneró el cliente API real (`contracts/openapi.json` + `api-types.ts` +
+`schemas.ts` recortado) contra el backend recién levantado — 79 rutas en ese momento.
+
+- `use-medical.ts`, `CreateAppointmentDialog.tsx`, `AppointmentDetailDialog.tsx`,
+  `MedicalPage.tsx` (Agenda + Expediente Clínico por paciente, con corrección de entradas
+  inline). Ruta `/medical` + nav "Médico" registrados en `App.tsx`/`AppLayout.tsx`.
+- **Hallazgo real de Fase 3**: al construir `AppointmentDetailDialog`, no había forma de
+  recuperar la consulta de una cita ya completada sin conocer su id de antemano (Fase 2 nunca
+  lo contempló — el flujo normal de "agendar, volver más tarde a ver la cita" no lo conserva).
+  Se agregó `GET /medical/appointments/{id}/consultation`, con el mismo chequeo RBAC "own
+  patients"/"read-all" del resto del módulo — **verificado que el permiso se chequea antes de
+  descifrar/leer, no después** (el orden importa: chequear después habría permitido que una
+  lectura no autorizada dispare el descifrado y el log de auditoría de todos modos, aunque la
+  respuesta nunca llegara al cliente). Contrato re-congelado a 80 rutas tras este agregado.
+- **Hallazgo real al reconstruir el fixture de pruebas**: recrear la base de datos limpia (como
+  parte de la verificación de la sesión anterior) había borrado el usuario/rol/paquetes que usan
+  TODOS los tests de integración de frontend existentes (`admin@elroble.hn`, company id 1,
+  `company_packages` de `administrative`) — no solo los de `medical`. `scripts/
+  bootstrap_admin.py` no tenía ninguna activación de paquete (`CompanyPackage`) pese a que
+  `pipeline`/`medical` la requieren vía `require_package` — se agregó explícitamente, junto con
+  los 13 permisos `medical:*` que tampoco estaban. Se verificó que esto no rompió nada
+  re-corriendo `PipelinePage.integration.test.tsx` (pasa) contra el fixture reconstruido.
+- `MedicalPage.integration.test.tsx`: flujo real completo (agendar cita → confirmar → registrar
+  consulta con diagnóstico) contra el backend real, más **verificación RBAC real, no solo de
+  UI**: un usuario con `medical:consultation:read-own-patients` (sin `-all`) que nunca atendió al
+  paciente recibe un 403 real al pedir la consulta directo contra la API — mismo patrón que la
+  verificación de enmascarado de `salary` en el cierre de `hr`.
+- **Hallazgo real durante el debugging del test**: la primera versión fallaba con
+  `POST /medical/appointments` → 409 en cada corrida repetida — no un bug, sino el `EXCLUDE
+  USING gist` (DED-26) funcionando exactamente como se diseñó: el test usaba "ahora + 1 hora"
+  como horario, y corridas repetidas segundos aparte contra la misma base persistente colisionan
+  con el mismo profesional en la misma ventana de 30 minutos. Se corrigió agregando un offset
+  aleatorio de días al horario de prueba — documentado in situ en el test, no es un bug de la app.
+- Suite completa de frontend tras el cierre: **22/23 tests pasando** en 14/15 archivos. El único
+  fallo (`AccountsPage.integration.test.tsx`) es una flakiness pre-existente y auto-documentada
+  en ese mismo test ("costo estructural conocido del enfoque de integración real sin fixtures
+  aisladas" — corridas repetidas contra la misma base persistente, no una base limpia por CI),
+  sin relación con `medical`; se confirmó que ya fallaba de la misma forma en aislamiento, no por
+  interferencia de los tests nuevos.
+- `npm run build`: limpio (mismo warning de tamaño de bundle ya documentado, no bloqueante).
+- `pytest tests/` final tras reconstruir el fixture: **65/65**, sin regresión.
+- **Módulo 9 (medical) cerrado — Fases 1-4 completas.** AMB-02 (retención de auditoría clínica)
+  sigue abierta, sin resolver — no se asumió un default para eso.
+
+---
+
+## MÓDULO 26 — `notifications` (Transversal), Fases 1-4 completas
+
+Primer módulo Transversal del proyecto — sin `require_package`, disponible sin importar el
+paquete contratado (spec 2.2). Elegido como siguiente paso tras `medical` por ser autocontenido
+(sin dependencia de red externa real para su funcionalidad core) y no requerir ningún paquete
+vertical activo.
+
+- `app/notifications/{models,schemas,services,routers}.py`: `NotificationTemplate` +
+  `Notification`. Motor de Correos (DED-27) implementado como interfaz real (`EmailSender`) con
+  una implementación de desarrollo (`LoggingEmailSender`) que registra el envío en vez de
+  entregarlo — el sandbox de este proyecto no tiene salida de red hacia ningún proveedor SMTP/API
+  (misma clase de limitación ya documentada con `ui.shadcn.com`/`cdn.playwright.dev`). Plantillas
+  Dinámicas (DED-29) con reemplazo `{variable}` vía `string.Formatter.vformat` y un diccionario
+  que no lanza `KeyError` en variables faltantes — deliberadamente sin Jinja2, para no abrir
+  superficie de inyección de plantillas en contenido que puede incluir texto de usuario.
+- Migración: RLS + grants en las 2 tablas nuevas, mismo patrón que todas las anteriores. Sin
+  hallazgos de esquema esta vez (a diferencia de `medical`, no hay concurrencia ni cifrado que
+  probar en Fase 4 — el módulo es estructuralmente más simple).
+- `tests/test_notifications_module.py`: 11 tests, capa de servicio directa (mismo patrón que
+  `sales`/`medical`). Cubre: envío directo e inicio de sesión por plantilla, reemplazo seguro de
+  placeholder faltante (no lanza error), unicidad de `code` por compañía, envío con plantilla
+  inexistente, envío por email usando un `EmailSender` inyectado (test doble, no el real), lectura
+  filtrada solo por el propio usuario, rechazo de marcar-leída de una notificación ajena (404, no
+  403 — evita confirmar la existencia del recurso a quien no es el destinatario), marcar
+  todas-como-leídas, y aislamiento RLS cross-tenant. **11/11 al primer intento** — sin hallazgos
+  reales de lógica en esta fase.
+- Contrato re-congelado a 86 rutas (80+6) tras regenerar `contracts/openapi.json`.
+- **Hallazgo real al regenerar el cliente frontend**: `openapi-zod-client` emite `z.record
+  (valueSchema)` (firma de un solo argumento, Zod v3) para el campo `context: dict[str,str]` de
+  `NotificationSend` — Zod v4 (instalado en este proyecto) exige `z.record(keySchema,
+  valueSchema)`, 2 argumentos obligatorios. `npx tsc --noEmit` lo atrapó de inmediato. Parcheado
+  puntualmente en `schemas.ts`, documentado in situ para la próxima regeneración.
+- Frontend: `use-notifications.ts` + `use-notification-templates.ts`, `NotificationBell.tsx`
+  (campana en el header global de `AppLayout`, contador de no leídas, popover con lista, poll
+  cada 30s — sin WebSocket/SSE en este cierre), `NotificationsPage.tsx` (CRUD de plantillas +
+  formulario de envío manual, para cumplir el criterio del DoD "listar, crear, editar, ver
+  detalle" también para la entidad `NotificationTemplate`, no solo para `Notification`).
+- **Hallazgo real al reconstruir el fixture de pruebas** (tercera vez que pasa en el proyecto):
+  `scripts/bootstrap_admin.py` asumía `company_id=1` — funciona la primera vez que se corre
+  contra una base recién migrada, pero se rompe apenas hay otras compañías creadas antes (ej.
+  tests de pytest corridos primero, que consumen la secuencia). Se corrigió para buscar la
+  compañía "El Roble" por nombre en vez de asumir el id — más robusto para cualquier sesión
+  futura, no solo para esta.
+- `NotificationsPage.integration.test.tsx`: crea y edita una plantilla desde la UI, envía una
+  notificación por plantilla con contexto real (verifica que el placeholder se resolvió contra el
+  backend, no solo visualmente), y verifica la campana (`NotificationBell`, renderizada por
+  separado) — contador de no leídas real, marcar como leída persiste contra el backend. **Hallazgo
+  de test, no de producto**: `userEvent.type()` interpreta `{` como inicio de una secuencia de
+  tecla especial (`{enter}`, etc.) — escribir literalmente `{name}` en un campo requiere escapar
+  como `{{name}` (la apertura se duplica, el cierre no) — documentado in situ en el test.
+- Suite completa de frontend con concurrencia plena (16 archivos a la vez): 21/24 tests pasando;
+  las 3 fallas (`AccountsPage`, `ContactsPage`, `EmployeesPage` — y `NotificationsPage` en esa
+  corrida particular) son la misma flakiness estructural ya documentada en `AccountsPage` desde
+  antes de este módulo (muchos tests creando/buscando datos en paralelo contra la misma base
+  persistente, no una base limpia por test) — confirmado que `NotificationsPage` pasa de forma
+  consistente en aislamiento y en combinaciones más pequeñas.
+- `npm run build`: limpio. `pytest tests/` final tras reconstruir el fixture: **76/76**.
+- **Módulo 26 (notifications) cerrado — Fases 1-4 completas.**
+
+---
+
+## MÓDULO 10 — `medical`, recetas — Fases 1-4 completas
+
+Continuación de `medical` dentro del mismo paquete `app/medical/` (mismo dominio "Médico",
+mismo router `/medical` — los módulos de la tabla no son 1:1 con carpetas/routers nuevos, spec
+sección 10). Elegido a pedido explícito de Roberto ("Médico extendido") sobre el resto de la
+tabla de Médico.
+
+- `Prescription` (cabecera) + `PrescriptionLine` (líneas de medicamento, DED-31) — una receta
+  real casi siempre lleva más de un medicamento, modelarla con una fila por medicamento habría
+  forzado "recetas" artificialmente separadas para una misma consulta.
+- Siempre emitida dentro de una `Consultation` existente (DED-30) — no hay receta suelta.
+- `dispensing_status` (`not_applicable | pending | dispensed`) calculado al emitir según si el
+  paquete `pharmacy` está activo para la compañía — reutiliza `get_active_packages` (la misma
+  función de dominio que usa `require_package`, sin duplicar la consulta).
+- **Sin cifrado pgcrypto** en los datos de receta (DED-32) — se verificó la spec al pie de la
+  letra: 8.2 limita el cifrado explícitamente a "diagnóstico y notas de consulta del Expediente
+  Clínico", sin mencionar Recetas. Se documentó como DEDUCIBLE, no como una omisión.
+- Inmutable con anulación (`void`+motivo obligatorio) en vez de edición o patrón de corrección
+  encadenada (DED-33) — la spec no exige "nunca se sobrescribe" para Recetas como sí lo hace
+  explícitamente para Expediente Clínico/Consulta.
+- Migración con RLS+grants, mismo patrón que todas las anteriores. Sin hallazgos de esquema.
+- `tests/test_medical_module.py` extendido con 5 tests nuevos (20/20 en el archivo, 81/81 en el
+  backend completo): múltiples líneas por receta, `dispensing_status` según paquete `pharmacy`
+  (sin ese paquete activo en la compañía de prueba → `not_applicable`), guardia de doble
+  anulación, listado por paciente cruzando 2 consultas distintas, receta sobre consulta
+  inexistente → 404. **Los 5 pasaron al primer intento** — el módulo estructuralmente más simple
+  hasta ahora (reutiliza RBAC, patrones de inmutabilidad y auditoría ya construidos en el módulo 9,
+  sin superficie nueva de concurrencia ni cifrado que probar).
+- Contrato re-congelado a 90 rutas (86+4) tras regenerar `contracts/openapi.json`. El parche
+  puntual de `z.record()` para Zod v4 (documentado en el cierre de `notifications`) se volvió a
+  aplicar al regenerar — se reconfirma que hay que revisarlo cada vez que se regenera el cliente
+  hasta que `openapi-zod-client` corrija su propia plantilla.
+- Frontend: sección "Recetas" integrada dentro de `AppointmentDetailDialog.tsx` — aparece una vez
+  hay consulta registrada, permite agregar/quitar líneas de medicamento dinámicamente antes de
+  emitir, y anular con motivo. `MedicalPage.integration.test.tsx` extendido con el flujo
+  completo: emitir receta con un medicamento → verificar contra la API que `dispensing_status`
+  cayó en `not_applicable` (paquete `pharmacy` no activo en la compañía de prueba) → anular desde
+  la UI → verificar que el estado "Anulada" persiste. Pasa sin ajustes de timing esta vez.
+- `npx tsc --noEmit` y `npm run build`: limpios. `pytest tests/` final desde una base recreada de
+  cero (con un reinicio completo del contenedor de por medio en esta sesión — se verificó que
+  PostgreSQL y los datos sobreviven a un `pg_ctlcluster ... start` tras la caída): **81/81**.
+- **Módulo 10 (medical — recetas) cerrado — Fases 1-4 completas.**
+
+---
+
+## MÓDULO 11 — `medical`, laboratorio — Fases 1-4 completas
+
+Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
+
+- `LabOrder` (cabecera) + `LabOrderTest` (líneas, DED-34) — mismo criterio que Recetas. Orden y
+  resultado en la misma fila (DED-35, transición `pending -> resulted`) — la orden pasa a
+  `completed` automáticamente cuando todas sus pruebas tienen resultado.
+- Marcado de valor crítico explícito, no inferido (DED-36) — se evaluó parsear el rango de
+  referencia contra el valor numérico, mismo estilo que se hizo con `professional_has_treated`,
+  pero los formatos reales ("70-100 mg/dL", "<5 UI/L", "Negativo") no tienen una unidad ni
+  estructura común sin un catálogo de pruebas normalizado — se documentó como DEDUCIBLE y TODO
+  futuro en vez de construir un parser frágil.
+- **Primer uso real de `core.Attachment`** — la tabla existía desde el cierre del módulo 1
+  (spec: "adjuntos" en el Núcleo) pero ningún módulo la había usado todavía. Se construyó
+  `AttachmentService` en `app/core/services.py` (genérico por `entity_type`/`entity_id`) con
+  almacenamiento en disco local bajo `attachment_storage_root` (nueva config) — documentado como
+  la misma clase de limitación de sandbox que `EmailSender` en `notifications` (sin proveedor de
+  object storage real accesible). Deliberadamente **sin** un `POST /attachments` genérico
+  cross-módulo: cada módulo consumidor expone su propio endpoint anidado
+  (`POST /medical/lab-order-tests/{id}/attachments`) que llama al servicio después de verificar
+  su propio RBAC — evita que un endpoint universal permita adjuntar a cualquier `entity_id` de
+  cualquier módulo sin que ese módulo controle el acceso a su propio recurso.
+- Se agregó `python-multipart` a `requirements.txt` (necesario para `UploadFile`/`File` de
+  FastAPI, no se había usado antes en el proyecto).
+- **Hallazgo real de Fase 4**: el primer test de "orden completa cuando se resultan todas las
+  pruebas" falló — la orden se quedaba en `ordered`. La causa: `app/database.py` configura
+  `AsyncSession(autoflush=False)` desde el cierre del módulo 1 (core), y el chequeo "¿todas las
+  pruebas ya están resulted?" hacía un `SELECT` nuevo dentro de la misma sesión que no veía el
+  cambio recién asignado en memoria sobre la prueba que se acababa de resultar (autoflush
+  desactivado = SQLAlchemy no sincroniza automáticamente antes de una query nueva). Corregido con
+  un `await db.flush()` explícito antes del chequeo. No es la primera vez que `autoflush=False`
+  exige disciplina extra en este proyecto, pero sí la primera vez que un test lo atrapó en vivo
+  en vez de descubrirse por inspección de código.
+- Migración con RLS+grants, mismo patrón. `tests/test_medical_module.py` extendido con 5 tests
+  nuevos (25/25 en el archivo, 86/86 en el backend completo): múltiples pruebas por orden, orden
+  completa automáticamente, resultado no se puede cargar dos veces, ida y vuelta real de un
+  adjunto (escribir a disco + leer de vuelta, con `monkeypatch` sobre `attachment_storage_root`
+  apuntando a un `tmp_path` de pytest para no ensuciar el filesystem real), orden sobre consulta
+  inexistente.
+- Contrato re-congelado a 96 rutas (90+6). El parche puntual de `z.record()` para Zod v4 se
+  volvió a aplicar al regenerar (tercera vez — se reconfirma el patrón).
+- Frontend: sección "Laboratorio" integrada en `AppointmentDetailDialog.tsx` (misma ubicación que
+  "Recetas") — ordenar múltiples pruebas, cargar resultado con checkbox de crítico, adjuntar y
+  descargar archivo. **Se agregaron dos helpers nuevos a `api-client.ts`** que no existían:
+  `apiUploadFile` (`apiRequest` siempre serializa el body como JSON, un adjunto real necesita
+  `multipart/form-data`) y `apiDownloadFile` (un `<a href>` normal no manda el header
+  `Authorization`, así que la descarga se pide como blob autenticado con `fetch` y se dispara
+  desde ahí). `MedicalPage.integration.test.tsx` extendido con el flujo completo: ordenar una
+  prueba → cargar resultado marcado crítico → verificar contra el backend que `is_critical` y
+  `status` quedaron correctos. Pasa sin ajustes de timing.
+- `npx tsc --noEmit` y `npm run build`: limpios. `pytest tests/` final desde una base recreada de
+  cero (14 migraciones): **86/86**.
+- **Módulo 11 (medical — laboratorio) cerrado — Fases 1-4 completas.**
+
+---
+
 ## Limitaciones de red del sandbox, documentadas explícitamente durante el proyecto
 - `ui.shadcn.com` no disponible → componentes UI escritos a mano sobre Radix.
 - `cdn.playwright.dev` no disponible → Vitest+jsdom como sustituto de E2E real en navegador
   (con la limitación explícita: no verifica CORS).
+- Sin salida de red hacia proveedores SMTP/API de correo → `notifications` (módulo 26) usa un
+  `EmailSender` de desarrollo que registra en vez de entregar (DED-27).
+- Sin acceso a un proveedor de object storage real → `medical` — laboratorio (módulo 11) usa
+  `AttachmentService` con almacenamiento en disco local (`attachment_storage_root`).

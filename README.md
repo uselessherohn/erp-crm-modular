@@ -10,9 +10,10 @@ lo hecho, fase por fase).
 
 ## Estado actual del proyecto
 
-**8 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
+**12 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
 contrato congelado, frontend, tests de integración reales) — **el
-paquete Administrativo está completo**:
+paquete Administrativo está completo, Médico tiene tres módulos, y el
+primer módulo Transversal (notifications) también**:
 
 | # | Módulo | Paquete | Estado |
 |---|--------|---------|--------|
@@ -24,10 +25,15 @@ paquete Administrativo está completo**:
 | 6 | accounting | Administrativo | ✓ Completo |
 | 7 | pipeline (leads/oportunidades) | Administrativo | ✓ Completo |
 | 8 | hr | Administrativo | ✓ Completo |
+| 9 | medical (Expediente Clínico, Agenda, Consulta) | Médico | ✓ Completo |
+| 10 | medical — recetas | Médico | ✓ Completo |
+| 11 | medical — laboratorio | Médico | ✓ Completo |
+| 26 | notifications | Transversal | ✓ Completo |
 
-Los paquetes Médico, Farmacéutico y Web, y los módulos transversales
-(reports, audit completo, notifications), todavía no se empezaron —
-son el siguiente paso natural del proyecto.
+Los módulos 12-15 de Médico (teleconsulta, facturación médica básica,
+portal/mensajería, reserva pública de citas), los paquetes Farmacéutico
+y Web, y los módulos transversales restantes (reports, audit completo),
+todavía no se empezaron.
 
 ## Marca e instalación como PWA
 

@@ -2,12 +2,18 @@ import asyncio
 from app import models_registry  # noqa: F401  (registra todos los modelos — ver ese módulo)
 from app.database import AsyncSessionLocal
 from app.core import models, security
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 
 async def bootstrap():
     async with AsyncSessionLocal() as db:
-        await db.execute(text("SELECT set_config('app.current_company_id', '1', false)"))
+        # Se busca "El Roble" por nombre en vez de asumir company_id=1 —
+        # el id real depende de cuántas filas haya consumido la secuencia
+        # antes de este bootstrap (ej. tests de pytest corridos antes).
+        company_id = (
+            await db.execute(select(models.Company.id).where(models.Company.name == "El Roble"))
+        ).scalar_one()
+        await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_id)})
         perms = [
             models.Permission(code="core:user:create", description="Crear usuarios"),
             models.Permission(code="core:user:list", description="Listar usuarios"),
@@ -96,18 +102,39 @@ async def bootstrap():
             models.Permission(code="hr:employee:read", description="Ver legajo (sin salario)"),
             models.Permission(code="hr:employee:read-sensitive", description="Ver salario del legajo"),
             models.Permission(code="hr:employee:terminate", description="Dar de baja a un empleado"),
+            models.Permission(code="medical:record:create", description="Crear entrada de expediente clínico"),
+            models.Permission(code="medical:record:read-own-patients", description="Ver expediente de pacientes propios"),
+            models.Permission(code="medical:record:read-all", description="Ver expediente de cualquier paciente"),
+            models.Permission(code="medical:appointment:create", description="Agendar cita"),
+            models.Permission(code="medical:appointment:list", description="Listar citas"),
+            models.Permission(code="medical:appointment:read", description="Ver una cita"),
+            models.Permission(code="medical:appointment:confirm", description="Confirmar cita"),
+            models.Permission(code="medical:appointment:reschedule", description="Reprogramar cita"),
+            models.Permission(code="medical:appointment:cancel", description="Cancelar cita"),
+            models.Permission(code="medical:consultation:create", description="Registrar/corregir consulta"),
+            models.Permission(code="medical:consultation:read-own-patients", description="Ver consulta de pacientes propios"),
+            models.Permission(code="medical:consultation:read-all", description="Ver consulta de cualquier paciente"),
+            models.Permission(code="notifications:template:create", description="Crear/editar plantillas de notificación"),
+            models.Permission(code="notifications:template:list", description="Listar plantillas de notificación"),
+            models.Permission(code="notifications:notification:send", description="Enviar una notificación"),
+            models.Permission(code="medical:prescription:create", description="Emitir/anular receta"),
+            models.Permission(code="medical:prescription:read-own-patients", description="Ver recetas de pacientes propios"),
+            models.Permission(code="medical:prescription:read-all", description="Ver recetas de cualquier paciente"),
+            models.Permission(code="medical:lab_order:create", description="Ordenar laboratorio / cargar resultado"),
+            models.Permission(code="medical:lab_order:read-own-patients", description="Ver laboratorio de pacientes propios"),
+            models.Permission(code="medical:lab_order:read-all", description="Ver laboratorio de cualquier paciente"),
         ]
         db.add_all(perms)
         await db.flush()
 
-        role = models.Role(company_id=1, name="admin", description="Bootstrap admin")
+        role = models.Role(company_id=company_id, name="admin", description="Bootstrap admin")
         db.add(role)
         await db.flush()
         for p in perms:
             db.add(models.RolePermission(role_id=role.id, permission_id=p.id))
 
         user = models.User(
-            company_id=1,
+            company_id=company_id,
             email="admin@elroble.hn",
             full_name="Admin Bootstrap",
             hashed_password=security.hash_password("SuperSegura123"),
@@ -115,6 +142,15 @@ async def bootstrap():
         db.add(user)
         await db.flush()
         db.add(models.UserRole(user_id=user.id, role_id=role.id))
+
+        # Paquetes activos — condición de arranque para `require_package`
+        # (spec 2.4), sin la cual TODAS las rutas gateadas devuelven 403 sin
+        # importar el RBAC. Sin endpoint público para contratar paquetes
+        # todavía (TODO conocido) — se activa directo contra la base, igual
+        # que se documentó en el cierre de `pipeline`.
+        db.add(models.CompanyPackage(company_id=company_id, package="administrative", status="active"))
+        db.add(models.CompanyPackage(company_id=company_id, package="medical", status="active"))
+
         await db.commit()
         print("bootstrap ok — user_id:", user.id, "role_id:", role.id)
 

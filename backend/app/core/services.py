@@ -520,3 +520,69 @@ class IdempotencyService:
         )
         await db.commit()
         return result
+
+
+# ---------------------------------------------------------------------------
+# Adjuntos genéricos (spec 8.2, "carga de resultados vía attachments") —
+# primer consumidor real: `medical` (laboratorio, módulo 11). Interfaz de
+# dominio reutilizable por cualquier módulo, con `entity_type`/`entity_id`
+# genérico (mismo patrón polimórfico que `audit`). DEDUCIBLE: el propio
+# router que expone la subida NO es genérico (no hay `POST /attachments`
+# universal que acepte cualquier `entity_type` de cualquier módulo sin
+# control) — cada módulo consumidor expone su propio endpoint anidado
+# (ej. `POST /medical/lab-order-tests/{id}/attachments`) que llama a este
+# servicio con un `entity_type` fijo que él mismo controla, después de
+# verificar el RBAC sobre el recurso real. Evita la superficie de un
+# endpoint que permite adjuntar archivos a un `entity_id` de un módulo
+# ajeno sin pasar por su propio control de acceso.
+# ---------------------------------------------------------------------------
+class AttachmentService:
+    @staticmethod
+    async def store(
+        db: AsyncSession, *, company_id: int, entity_type: str, entity_id: int,
+        filename: str, mime_type: str, content: bytes, uploaded_by: int,
+    ) -> models.Attachment:
+        import os
+        from pathlib import Path
+
+        storage_root = Path(settings.attachment_storage_root) / str(company_id) / entity_type
+        storage_root.mkdir(parents=True, exist_ok=True)
+        stored_filename = f"{uuid.uuid4().hex}_{filename}"
+        storage_path = storage_root / stored_filename
+        storage_path.write_bytes(content)
+
+        attachment = models.Attachment(
+            company_id=company_id, entity_type=entity_type, entity_id=entity_id,
+            filename=filename, mime_type=mime_type, storage_path=os.fspath(storage_path),
+            uploaded_by=uploaded_by,
+        )
+        db.add(attachment)
+        await db.commit()
+        await db.refresh(attachment)
+        return attachment
+
+    @staticmethod
+    async def list_for_entity(db: AsyncSession, *, company_id: int, entity_type: str, entity_id: int) -> list[models.Attachment]:
+        result = await db.execute(
+            select(models.Attachment).where(
+                models.Attachment.company_id == company_id,
+                models.Attachment.entity_type == entity_type,
+                models.Attachment.entity_id == entity_id,
+            ).order_by(models.Attachment.created_at)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get(db: AsyncSession, *, company_id: int, attachment_id: int) -> models.Attachment | None:
+        result = await db.execute(
+            select(models.Attachment).where(
+                models.Attachment.company_id == company_id, models.Attachment.id == attachment_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    def read_bytes(attachment: models.Attachment) -> bytes:
+        from pathlib import Path
+
+        return Path(attachment.storage_path).read_bytes()

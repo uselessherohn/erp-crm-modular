@@ -17,6 +17,8 @@ from app.sales import models as sales_models  # noqa: E402,F401
 from app.accounting import models as accounting_models  # noqa: E402,F401
 from app.pipeline import models as pipeline_models  # noqa: E402,F401
 from app.hr import models as hr_models  # noqa: E402,F401
+from app.medical import models as medical_models  # noqa: E402,F401
+from app.notifications import models as notifications_models  # noqa: E402,F401
 
 config = context.config
 

@@ -1166,6 +1166,485 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/medical/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Record Entry */
+        post: operations["create_record_entry_medical_records_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/records/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Record Entry */
+        get: operations["get_record_entry_medical_records__entry_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/patients/{patient_contact_id}/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Record Entries */
+        get: operations["list_record_entries_medical_patients__patient_contact_id__records_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/appointments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Appointments */
+        get: operations["list_appointments_medical_appointments_get"];
+        put?: never;
+        /** Create Appointment */
+        post: operations["create_appointment_medical_appointments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/appointments/{appointment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Appointment */
+        get: operations["get_appointment_medical_appointments__appointment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/appointments/{appointment_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Appointment */
+        post: operations["confirm_appointment_medical_appointments__appointment_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/appointments/{appointment_id}/reschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reschedule Appointment */
+        post: operations["reschedule_appointment_medical_appointments__appointment_id__reschedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/appointments/{appointment_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Appointment */
+        post: operations["cancel_appointment_medical_appointments__appointment_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/appointments/{appointment_id}/consultation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Consultation For Appointment */
+        get: operations["get_consultation_for_appointment_medical_appointments__appointment_id__consultation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/consultations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Consultation */
+        post: operations["create_consultation_medical_consultations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/consultations/{consultation_id}/correct": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Correct Consultation */
+        post: operations["correct_consultation_medical_consultations__consultation_id__correct_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/consultations/{consultation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Consultation */
+        get: operations["get_consultation_medical_consultations__consultation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/prescriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Prescription */
+        post: operations["create_prescription_medical_prescriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/prescriptions/{prescription_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prescription */
+        get: operations["get_prescription_medical_prescriptions__prescription_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/patients/{patient_contact_id}/prescriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Prescriptions For Patient */
+        get: operations["list_prescriptions_for_patient_medical_patients__patient_contact_id__prescriptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/prescriptions/{prescription_id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Void Prescription */
+        post: operations["void_prescription_medical_prescriptions__prescription_id__void_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/lab-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Lab Order */
+        post: operations["create_lab_order_medical_lab_orders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/lab-orders/{lab_order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Lab Order */
+        get: operations["get_lab_order_medical_lab_orders__lab_order_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/patients/{patient_contact_id}/lab-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lab Orders For Patient */
+        get: operations["list_lab_orders_for_patient_medical_patients__patient_contact_id__lab_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/lab-order-tests/{lab_order_test_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enter Lab Order Test Result */
+        post: operations["enter_lab_order_test_result_medical_lab_order_tests__lab_order_test_id__result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/lab-order-tests/{lab_order_test_id}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lab Order Test Attachments */
+        get: operations["list_lab_order_test_attachments_medical_lab_order_tests__lab_order_test_id__attachments_get"];
+        put?: never;
+        /** Upload Lab Order Test Attachment */
+        post: operations["upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/attachments/{attachment_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Attachment */
+        get: operations["download_attachment_medical_attachments__attachment_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_notifications_templates_get"];
+        put?: never;
+        /** Create Template */
+        post: operations["create_template_notifications_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/templates/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Template */
+        patch: operations["update_template_notifications_templates__code__patch"];
+        trace?: never;
+    };
+    "/notifications/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Notification */
+        post: operations["send_notification_notifications_send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Notifications */
+        get: operations["list_my_notifications_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{notification_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Notification Read */
+        post: operations["mark_notification_read_notifications__notification_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark All Notifications Read */
+        post: operations["mark_all_notifications_read_notifications_read_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1270,6 +1749,111 @@ export interface components {
          * @enum {string}
          */
         ActivityTypeEnum: "call" | "email" | "meeting" | "note" | "task";
+        /** AppointmentCancel */
+        AppointmentCancel: {
+            /** Cancellation Reason */
+            cancellation_reason: string;
+        };
+        /** AppointmentCreate */
+        AppointmentCreate: {
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            /**
+             * Scheduled Start
+             * Format: date-time
+             */
+            scheduled_start: string;
+            /**
+             * Scheduled End
+             * Format: date-time
+             */
+            scheduled_end: string;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AppointmentRead */
+        AppointmentRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            /**
+             * Scheduled Start
+             * Format: date-time
+             */
+            scheduled_start: string;
+            /**
+             * Scheduled End
+             * Format: date-time
+             */
+            scheduled_end: string;
+            status: components["schemas"]["AppointmentStatusEnum"];
+            /** Reason */
+            reason: string | null;
+            /** Cancellation Reason */
+            cancellation_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AppointmentReschedule */
+        AppointmentReschedule: {
+            /**
+             * Scheduled Start
+             * Format: date-time
+             */
+            scheduled_start: string;
+            /**
+             * Scheduled End
+             * Format: date-time
+             */
+            scheduled_end: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * AppointmentStatusEnum
+         * @enum {string}
+         */
+        AppointmentStatusEnum: "scheduled" | "confirmed" | "completed" | "cancelled" | "no_show";
+        /** AttachmentRead */
+        AttachmentRead: {
+            /** Id */
+            id: number;
+            /** Entity Type */
+            entity_type: string;
+            /** Entity Id */
+            entity_id: number;
+            /** Filename */
+            filename: string;
+            /** Mime Type */
+            mime_type: string;
+            /** Uploaded By */
+            uploaded_by: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** Body_upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post */
+        Body_upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post: {
+            /** File */
+            file: string;
+        };
         /** CategoryCreate */
         CategoryCreate: {
             /** Name */
@@ -1290,6 +1874,42 @@ export interface components {
             /** Is Active */
             is_active: boolean;
         };
+        /** ClinicalRecordEntryCreate */
+        ClinicalRecordEntryCreate: {
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            entry_type: components["schemas"]["ClinicalRecordEntryTypeEnum"];
+            /** Content */
+            content: string;
+            /** Previous Entry Id */
+            previous_entry_id?: number | null;
+        };
+        /** ClinicalRecordEntryRead */
+        ClinicalRecordEntryRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            entry_type: components["schemas"]["ClinicalRecordEntryTypeEnum"];
+            /** Content */
+            content: string;
+            /** Previous Entry Id */
+            previous_entry_id: number | null;
+            /** Author User Id */
+            author_user_id: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * ClinicalRecordEntryTypeEnum
+         * @enum {string}
+         */
+        ClinicalRecordEntryTypeEnum: "antecedent" | "allergy" | "diagnosis" | "note";
         /** CompanyCreate */
         CompanyCreate: {
             /** Name */
@@ -1347,6 +1967,67 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ConsultationCorrect
+         * @description Corrección de una consulta ya existente (DED-25) — crea una fila
+         *     nueva enlazada vía `previous_consultation_id`, la anterior queda
+         *     marcada `superseded_by_id` pero nunca se modifica su contenido.
+         */
+        ConsultationCorrect: {
+            /** Physical Exam */
+            physical_exam?: string | null;
+            /** Diagnosis Cie10 */
+            diagnosis_cie10?: string | null;
+            /** Diagnosis Text */
+            diagnosis_text?: string | null;
+            /** Treatment Plan */
+            treatment_plan?: string | null;
+        };
+        /** ConsultationCreate */
+        ConsultationCreate: {
+            /** Appointment Id */
+            appointment_id: number;
+            /** Physical Exam */
+            physical_exam?: string | null;
+            /** Diagnosis Cie10 */
+            diagnosis_cie10?: string | null;
+            /** Diagnosis Text */
+            diagnosis_text?: string | null;
+            /** Treatment Plan */
+            treatment_plan?: string | null;
+        };
+        /** ConsultationRead */
+        ConsultationRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Appointment Id */
+            appointment_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            /** Physical Exam */
+            physical_exam: string | null;
+            /** Diagnosis Cie10 */
+            diagnosis_cie10: string | null;
+            /** Diagnosis Text */
+            diagnosis_text: string | null;
+            /** Treatment Plan */
+            treatment_plan: string | null;
+            /** Previous Consultation Id */
+            previous_consultation_id: number | null;
+            /** Superseded By Id */
+            superseded_by_id: number | null;
+            /** Created By */
+            created_by: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ContactCreate */
         ContactCreate: {
@@ -1803,6 +2484,85 @@ export interface components {
          * @enum {string}
          */
         InvoiceStatusEnum: "draft" | "posted" | "partially_paid" | "paid" | "cancelled";
+        /** LabOrderCreate */
+        LabOrderCreate: {
+            /** Consultation Id */
+            consultation_id: number;
+            /** Tests */
+            tests: components["schemas"]["LabOrderTestRequest"][];
+        };
+        /** LabOrderRead */
+        LabOrderRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Consultation Id */
+            consultation_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            status: components["schemas"]["LabOrderStatusEnum"];
+            /**
+             * Ordered At
+             * Format: date-time
+             */
+            ordered_at: string;
+            /** Created By */
+            created_by: number;
+            /** Tests */
+            tests: components["schemas"]["LabOrderTestRead"][];
+        };
+        /**
+         * LabOrderStatusEnum
+         * @enum {string}
+         */
+        LabOrderStatusEnum: "ordered" | "completed" | "cancelled";
+        /** LabOrderTestRead */
+        LabOrderTestRead: {
+            /** Id */
+            id: number;
+            /** Test Name */
+            test_name: string;
+            status: components["schemas"]["LabOrderTestStatusEnum"];
+            /** Result Value */
+            result_value: string | null;
+            /** Result Unit */
+            result_unit: string | null;
+            /** Reference Range Text */
+            reference_range_text: string | null;
+            /** Is Critical */
+            is_critical: boolean;
+            /** Resulted At */
+            resulted_at: string | null;
+            /** Resulted By */
+            resulted_by: number | null;
+        };
+        /** LabOrderTestRequest */
+        LabOrderTestRequest: {
+            /** Test Name */
+            test_name: string;
+        };
+        /** LabOrderTestResult */
+        LabOrderTestResult: {
+            /** Result Value */
+            result_value: string;
+            /** Result Unit */
+            result_unit?: string | null;
+            /** Reference Range Text */
+            reference_range_text?: string | null;
+            /**
+             * Is Critical
+             * @default false
+             */
+            is_critical: boolean;
+        };
+        /**
+         * LabOrderTestStatusEnum
+         * @enum {string}
+         */
+        LabOrderTestStatusEnum: "pending" | "resulted";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -1828,6 +2588,92 @@ export interface components {
          * @enum {string}
          */
         NoteTypeEnum: "credit" | "debit";
+        /**
+         * NotificationChannelEnum
+         * @enum {string}
+         */
+        NotificationChannelEnum: "in_app" | "email";
+        /** NotificationRead */
+        NotificationRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Recipient User Id */
+            recipient_user_id: number;
+            channel: components["schemas"]["NotificationChannelEnum"];
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Template Code */
+            template_code: string | null;
+            /** Email Status */
+            email_status: string | null;
+            /** Read At */
+            read_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** NotificationSend */
+        NotificationSend: {
+            /** Recipient User Id */
+            recipient_user_id: number;
+            /** @default in_app */
+            channel: components["schemas"]["NotificationChannelEnum"];
+            /** Title */
+            title?: string | null;
+            /** Body */
+            body?: string | null;
+            /** Template Code */
+            template_code?: string | null;
+            /** Context */
+            context?: {
+                [key: string]: string;
+            };
+        };
+        /** NotificationTemplateCreate */
+        NotificationTemplateCreate: {
+            /** Code */
+            code: string;
+            /** Subject Template */
+            subject_template: string;
+            /** Body Template */
+            body_template: string;
+        };
+        /** NotificationTemplateRead */
+        NotificationTemplateRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Code */
+            code: string;
+            /** Subject Template */
+            subject_template: string;
+            /** Body Template */
+            body_template: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** NotificationTemplateUpdate */
+        NotificationTemplateUpdate: {
+            /** Subject Template */
+            subject_template?: string | null;
+            /** Body Template */
+            body_template?: string | null;
+        };
         /** OpportunityCloseLost */
         OpportunityCloseLost: {
             /** Lost Reason */
@@ -2003,6 +2849,82 @@ export interface components {
             title: string;
             /** Department Id */
             department_id: number;
+        };
+        /** PrescriptionCreate */
+        PrescriptionCreate: {
+            /** Consultation Id */
+            consultation_id: number;
+            /** Notes */
+            notes?: string | null;
+            /** Lines */
+            lines: components["schemas"]["PrescriptionLineCreate"][];
+        };
+        /**
+         * PrescriptionDispensingStatusEnum
+         * @enum {string}
+         */
+        PrescriptionDispensingStatusEnum: "not_applicable" | "pending" | "dispensed";
+        /** PrescriptionLineCreate */
+        PrescriptionLineCreate: {
+            /** Medication Name */
+            medication_name: string;
+            /** Dosage */
+            dosage: string;
+            /** Route */
+            route: string;
+            /** Frequency */
+            frequency: string;
+            /** Duration */
+            duration: string;
+        };
+        /** PrescriptionLineRead */
+        PrescriptionLineRead: {
+            /** Id */
+            id: number;
+            /** Medication Name */
+            medication_name: string;
+            /** Dosage */
+            dosage: string;
+            /** Route */
+            route: string;
+            /** Frequency */
+            frequency: string;
+            /** Duration */
+            duration: string;
+            dispensing_status: components["schemas"]["PrescriptionDispensingStatusEnum"];
+        };
+        /** PrescriptionRead */
+        PrescriptionRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Consultation Id */
+            consultation_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            /** Notes */
+            notes: string | null;
+            /** Voided At */
+            voided_at: string | null;
+            /** Void Reason */
+            void_reason: string | null;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /** Created By */
+            created_by: number;
+            /** Lines */
+            lines: components["schemas"]["PrescriptionLineRead"][];
+        };
+        /** PrescriptionVoid */
+        PrescriptionVoid: {
+            /** Void Reason */
+            void_reason: string;
         };
         /** PriceListCreate */
         PriceListCreate: {
@@ -5641,6 +6563,1070 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmployeeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_record_entry_medical_records_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClinicalRecordEntryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClinicalRecordEntryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_record_entry_medical_records__entry_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClinicalRecordEntryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_record_entries_medical_patients__patient_contact_id__records_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                patient_contact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClinicalRecordEntryRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_appointments_medical_appointments_get: {
+        parameters: {
+            query?: {
+                professional_user_id?: number | null;
+                patient_contact_id?: number | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_appointment_medical_appointments_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_appointment_medical_appointments__appointment_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                appointment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_appointment_medical_appointments__appointment_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                appointment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reschedule_appointment_medical_appointments__appointment_id__reschedule_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                appointment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentReschedule"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_appointment_medical_appointments__appointment_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                appointment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentCancel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_consultation_for_appointment_medical_appointments__appointment_id__consultation_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                appointment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsultationRead"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_consultation_medical_consultations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsultationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsultationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    correct_consultation_medical_consultations__consultation_id__correct_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                consultation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsultationCorrect"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsultationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_consultation_medical_consultations__consultation_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                consultation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsultationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_prescription_medical_prescriptions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrescriptionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrescriptionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prescription_medical_prescriptions__prescription_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                prescription_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrescriptionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_prescriptions_for_patient_medical_patients__patient_contact_id__prescriptions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                patient_contact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrescriptionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    void_prescription_medical_prescriptions__prescription_id__void_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                prescription_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrescriptionVoid"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrescriptionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_lab_order_medical_lab_orders_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabOrderCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabOrderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lab_order_medical_lab_orders__lab_order_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                lab_order_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabOrderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_lab_orders_for_patient_medical_patients__patient_contact_id__lab_orders_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                patient_contact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabOrderRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enter_lab_order_test_result_medical_lab_order_tests__lab_order_test_id__result_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                lab_order_test_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabOrderTestResult"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabOrderTestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_lab_order_test_attachments_medical_lab_order_tests__lab_order_test_id__attachments_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                lab_order_test_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                lab_order_test_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_attachment_medical_attachments__attachment_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                attachment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_notifications_templates_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTemplateRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_template_notifications_templates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTemplateRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_notifications_templates__code__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTemplateRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_notification_notifications_send_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationSend"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_notifications_notifications_get: {
+        parameters: {
+            query?: {
+                unread_only?: boolean;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_notification_read_notifications__notification_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                notification_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_all_notifications_read_notifications_read_all_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

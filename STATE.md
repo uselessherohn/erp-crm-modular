@@ -47,10 +47,10 @@ es transparente a nivel de API).
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
-- Médico: (—) todos
+- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (—), facturación médica básica (—), portal/mensajería (—), reserva pública de citas (—)
 - Farmacéutico: (—) todos
 - Web: (—) todos
-- Transversal: reports (—), audit completo (—), notifications (—)
+- Transversal: reports (—), audit completo (—), notifications (✓ Completo — Fases 1-4 completas)
 
 ## 2. Contratos públicos vigentes (NO redefinir)
 
@@ -429,6 +429,225 @@ spec 7.1) — **Fases 1-4 completas**
   intermedia mostró la misma intermitencia ya documentada de
   `AccountsPage` bajo carga del sandbox — no una regresión).
 
+### `medical` (módulo 9 — Expediente Clínico, Agenda Médica, Consulta) — ✓ COMPLETO
+- Paquete requerido: `medical` (`require_package("medical")` en todas las
+  rutas, spec 2.4). Depende solo de `core`+`contacts` (spec 8.2) — sin
+  dependencia de `Administrativo`.
+- Paciente = `Contact.is_patient=true` — sin entidad `Patient` propia.
+- **Rutas nuevas: 12** (80 rutas totales del sistema, 68 previas + 11 de
+  Fase 2 + 1 agregada en Fase 3 — `GET /medical/appointments/{id}/
+  consultation`, hueco real de Fase 2 expuesto por el frontend: no había
+  forma de recuperar la consulta de una cita ya completada sin conocer su
+  id de antemano):
+  `POST/GET /medical/records`, `GET /medical/records/{id}`,
+  `GET /medical/patients/{patient_contact_id}/records`,
+  `POST/GET /medical/appointments`, `GET /medical/appointments/{id}`,
+  `POST /medical/appointments/{id}/confirm`,
+  `POST /medical/appointments/{id}/reschedule`,
+  `POST /medical/appointments/{id}/cancel`,
+  `GET /medical/appointments/{id}/consultation`,
+  `POST /medical/consultations`, `GET /medical/consultations/{id}`,
+  `POST /medical/consultations/{id}/correct`.
+- Cifrado en reposo (pgcrypto, spec 8.2 [core]): `pgp_sym_encrypt`/
+  `pgp_sym_decrypt` vía `sqlalchemy.func`, clave = `settings.pgcrypto_key`
+  (variable de entorno, DED-24-KEY — ver AMB-KEY más abajo). Cifrados:
+  `ClinicalRecordEntry.content`, `Consultation.diagnosis_text`,
+  `Consultation.physical_exam`, `Consultation.treatment_plan`. En claro:
+  `Consultation.diagnosis_cie10` (código estandarizado), `Appointment.
+  reason`/`cancellation_reason` (no es diagnóstico ni nota clínica).
+  **Verificado en Fase 4**: la columna cruda en Postgres nunca contiene el
+  texto plano (test explícito por cada entidad cifrada).
+- Versionado "nunca se sobrescribe" (spec 8.2): `previous_entry_id`
+  (`ClinicalRecordEntry`), `previous_consultation_id`/`superseded_by_id`
+  (`Consultation`). Sin endpoints UPDATE/DELETE. El invariante "una sola
+  consulta vigente por cita" se garantiza con `SELECT ... FOR UPDATE`
+  (bloqueo de fila real), no con constraint — ver hallazgo de Fase 4 en
+  DED-25 (sección 4) y en la migración `1669f8fbbc6b`.
+- Bloqueo de horario real: `EXCLUDE USING gist` (`btree_gist`) sobre
+  `(professional_user_id, tstzrange(scheduled_start, scheduled_end, '[)'))`
+  para citas `scheduled`/`confirmed`. **Verificado con test de
+  concurrencia real** (8 inserts simultáneos para el mismo profesional/
+  horario traslapado → exactamente 1 gana).
+- RBAC clínico "own patients" vs "read-all": `medical:record:read-all` /
+  `medical:consultation:read-all` pasa siempre; sin ese permiso, se exige
+  `...:read-own-patients` Y que el actor tenga al menos una `Appointment`
+  con ese paciente (`professional_has_treated`, sin tabla de asignación
+  paciente↔profesional separada).
+- Auditoría: TODO acceso de lectura (`GET` de entrada de expediente, lista
+  por paciente, consulta) pasa por `AuditService.log_event` con
+  `correlation_id`, sin excepción (spec 8.2). Verificado en Fase 4.
+- "Profesional" = `User` directamente (DED-23) — sin entidad
+  `Practitioner` separada. TODO si se necesita agendar personal sin
+  cuenta de login.
+- **Fase 4 backend**: `tests/test_medical_module.py` — 15 tests nuevos
+  (65/65 total, sin regresión) contra Postgres real desde una base
+  recreada de cero (`DROP DATABASE`→`CREATE DATABASE`→`alembic upgrade
+  head`, mismo patrón de verificación limpia que `pipeline`). Cubre:
+  cifrado a nivel de fila cruda (2 tests), versionado sin sobrescritura
+  (Expediente y Consulta), bloqueo de horario con concurrencia real,
+  confirmar/reprogramar/cancelar cita, "una consulta por cita" +
+  corrección, consulta requiere cita activa, RBAC "own patients"
+  (`professional_has_treated`), y aislamiento RLS cross-tenant.
+- **Fase 3 (frontend) — completa.** `use-medical.ts` (hooks de React
+  Query), `CreateAppointmentDialog.tsx`, `AppointmentDetailDialog.tsx`
+  (confirmar/reprogramar/cancelar + registrar/ver/corregir consulta
+  inline), `MedicalPage.tsx` (Agenda + Expediente Clínico por paciente
+  con corrección de entradas). Ruta `/medical` y nav "Médico" registrados.
+  `MedicalPage.integration.test.tsx`: flujo completo real (agendar →
+  confirmar → registrar consulta con diagnóstico) + **verificación RBAC
+  real contra la API** (un usuario con `medical:consultation:read-own-
+  patients` sin `-all`, que nunca atendió al paciente, recibe 403 real al
+  pedir la consulta directamente — no solo "no se muestra en la UI",
+  mismo patrón que el test de enmascarado de `salary` en `hr`).
+- **AMB-KEY** (pgcrypto, spec 1.1 — 5 campos obligatorios, DEDUCIBLE por
+  defecto ante ausencia de gestor de secretos declarado):
+  `key_location=variable de entorno (settings.pgcrypto_key, .env local)`,
+  `rotation_period_days=sin rotación definida`, `owner=Roberto`,
+  `rekey_plan=no definido — TODO si se confirma requisito regulatorio`,
+  `backup_policy=hereda backup de la base completa, sin backup separado
+  de la clave`. **Sigue AMBIGUO en un punto no resuelto por el default**:
+  período de retención regulatoria del log de auditoría clínico (AMB-02,
+  sección 4) — Roberto no lo ha confirmado todavía.
+
+### `notifications` (módulo 26 — Transversal) — ✓ COMPLETO
+- **Sin `require_package`** — disponible para cualquier compañía sin
+  importar el paquete contratado (spec 2.2: los paquetes verticales
+  *usan* `notifications`, no la *habilitan*).
+- **Rutas nuevas: 6** (86 rutas totales del sistema, 80 previas + 6):
+  `POST/GET /notifications/templates`, `PATCH /notifications/templates/
+  {code}`, `POST /notifications/send`, `GET /notifications`,
+  `POST /notifications/{id}/read`, `POST /notifications/read-all`.
+- Motor de Correos (DED-27): interfaz real (`EmailSender`) con
+  implementación de desarrollo (`LoggingEmailSender`) que registra el
+  envío (`email_status='logged_only'`) en vez de entregarlo — el sandbox
+  de este proyecto no tiene salida de red hacia ningún proveedor SMTP/API
+  (misma limitación que `ui.shadcn.com`/`cdn.playwright.dev`). Producción
+  reemplaza la clase inyectada, el resto del módulo no cambia.
+- Plantillas Dinámicas (DED-29): reemplazo de `{variable}` con
+  `str.Formatter.vformat` + diccionario que no lanza `KeyError` en
+  variables faltantes — sin Jinja2 (evita SSTI en contenido que puede
+  incluir texto de usuario en `context`).
+- Notificación siempre dirigida a un `User` interno (DED-28) — mensajería
+  a `Contact` (confirmación de pedido, recordatorio de cita) es
+  responsabilidad de cada módulo consumidor (`sales`, `medical`), no de
+  este motor genérico.
+- Sin RBAC de lectura granular — `GET /notifications` siempre filtra por
+  `recipient_user_id = actor.id`; "leer notificaciones de otro usuario"
+  no existe como concepto.
+- **Hallazgo real de regeneración de contrato**: `openapi-zod-client`
+  emite `z.record(valueSchema)` (firma Zod v3, un solo argumento) para
+  `dict[str, str]` — Zod v4 (instalado en este proyecto) exige
+  `z.record(keySchema, valueSchema)`, 2 argumentos. Parche puntual
+  documentado in situ en `schemas.ts` (`NotificationSend.context`) —
+  mismo tipo de ajuste que ya existía para el cliente Zodios descartado,
+  ahora también necesario dentro de los schemas que sí se conservan.
+- 11 tests backend nuevos (76/76 total). Frontend: `NotificationBell.tsx`
+  (campana global en `AppLayout`, contador de no leídas, poll cada 30s —
+  sin WebSocket/SSE, TODO si se necesita push real-time) +
+  `NotificationsPage.tsx` (gestión de plantillas + envío manual).
+  `NotificationsPage.integration.test.tsx`: crea y edita una plantilla,
+  envía por plantilla con contexto real, y verifica que la campana
+  refleja el no leído y que marcarla como leída persiste contra el
+  backend — no solo un cambio visual.
+- Bootstrap del entorno de test (`bootstrap_admin.py`) corregido en este
+  cierre: ya no asume `company_id=1` — busca "El Roble" por nombre (el id
+  real depende de cuántas filas consumió la secuencia antes del
+  bootstrap, ej. tests de pytest corridos previamente).
+
+### `medical` — recetas (módulo 10) — ✓ COMPLETO
+- Vive en el mismo paquete Python `app/medical/` que el módulo 9 (mismo
+  dominio "Médico", mismo router con prefijo `/medical` — no cada módulo
+  de la tabla es una carpeta/router nueva, ver spec sección 10).
+- **Rutas nuevas: 4** (90 rutas totales, 86 previas + 4):
+  `POST /medical/prescriptions`, `GET /medical/prescriptions/{id}`,
+  `GET /medical/patients/{patient_contact_id}/prescriptions`,
+  `POST /medical/prescriptions/{id}/void`.
+- Cabecera (`Prescription`) + líneas (`PrescriptionLine`, DED-31) — una
+  receta casi siempre lleva más de un medicamento.
+- `dispensing_status` (`not_applicable | pending | dispensed`) calculado
+  al emitir según si el paquete `pharmacy` está activo para la compañía
+  (`pending` si sí, `not_applicable` si no) — Farmacéutico aún no se
+  construyó en este proyecto; cuando se construya, ese módulo es quien
+  transiciona `pending -> dispensed`, no `medical`.
+- **Sin cifrado pgcrypto** en `PrescriptionLine` (DED-32) — spec 8.2
+  limita el cifrado explícitamente a diagnóstico/notas de Consulta, no a
+  Recetas; se siguió la spec al pie de la letra en vez de extender el
+  alcance por iniciativa propia.
+- Inmutable con anulación (`void` + motivo obligatorio), no edición —
+  mismo patrón que documentos `confirmed`/`cancelled` del resto del ERP
+  (DED-33) — a diferencia de Expediente Clínico/Consulta, la spec no
+  exige "nunca se sobrescribe" para Recetas.
+- RBAC clínico idéntico a `records`/`consultations`:
+  `medical:prescription:read-all` vs `...:read-own-patients` +
+  `professional_has_treated`.
+- 5 tests backend nuevos (81/81 total): múltiples líneas por receta,
+  `dispensing_status` según paquete `pharmacy`, anulación con guardia de
+  doble-anulación, listado por paciente cruzando 2 consultas distintas,
+  receta sobre consulta inexistente. **Todos al primer intento** — sin
+  hallazgos reales de lógica en Fase 4 esta vez.
+- Frontend: sección "Recetas" integrada dentro de
+  `AppointmentDetailDialog.tsx` (aparece una vez hay consulta
+  registrada) — emitir con líneas dinámicas (agregar/quitar
+  medicamento), anular con motivo. `MedicalPage.integration.test.tsx`
+  extendido con el flujo completo (emitir → verificar
+  `dispensing_status` real contra el backend → anular → verificar que
+  persiste).
+
+### `medical` — laboratorio (módulo 11) — ✓ COMPLETO
+- **Rutas nuevas: 6** (96 rutas totales, 90 previas + 6):
+  `POST/GET /medical/lab-orders`, `GET /medical/lab-orders/{id}`,
+  `GET /medical/patients/{patient_contact_id}/lab-orders`,
+  `POST /medical/lab-order-tests/{id}/result`,
+  `POST/GET /medical/lab-order-tests/{id}/attachments`,
+  `GET /medical/attachments/{attachment_id}/download`.
+- Cabecera (`LabOrder`) + líneas (`LabOrderTest`, DED-34) — mismo
+  criterio que Recetas. Orden y resultado viven en la misma fila
+  (transición `pending -> resulted`, DED-35) — sin tabla `LabResult`
+  separada. La orden pasa a `completed` automáticamente cuando todas sus
+  pruebas tienen resultado (transición derivada, no pedida por el actor).
+- Marcado de valor crítico (`is_critical`) **explícito** (checkbox al
+  cargar el resultado), no inferido automáticamente comparando contra el
+  rango de referencia (DED-36) — los rangos llegan en formatos
+  heterogéneos ("70-100 mg/dL", "<5 UI/L", "Negativo") sin una unidad
+  normalizada por prueba que permita un parseo confiable sin un catálogo
+  de pruebas — fuera de alcance de este cierre.
+- **Primer uso real de la tabla `core.Attachment`** (existía desde el
+  módulo 1, nunca antes conectada a nada). Se construyó
+  `AttachmentService` (`app/core/services.py`) — genérico por
+  `entity_type`/`entity_id`, pero **sin** un endpoint `POST /attachments`
+  universal: cada módulo consumidor expone su propio endpoint anidado
+  (`POST /medical/lab-order-tests/{id}/attachments`) que llama al
+  servicio con un `entity_type` fijo después de verificar su propio RBAC
+  — evita la superficie de un endpoint que deja adjuntar archivos a un
+  `entity_id` de un módulo ajeno sin pasar por su control de acceso.
+  Almacenamiento en disco local (`attachment_storage_root`, config) —
+  DEDUCIBLE por ausencia de proveedor de object storage real en el
+  sandbox, mismo criterio que `EmailSender` en `notifications`.
+- **Hallazgo real de Fase 4**: la orden no transicionaba a `completed`
+  tras resultar la última prueba pendiente — la causa fue que este
+  proyecto usa `AsyncSession(autoflush=False)` (decisión de Fase 1 de
+  `core`) y el chequeo "¿todas las pruebas están resulted?" hacía un
+  `SELECT` nuevo que no veía el cambio recién hecho en memoria sobre la
+  prueba actual. Corregido con un `await db.flush()` explícito antes del
+  chequeo — no es la primera vez que este patrón (`autoflush=False`)
+  exige un flush explícito en el proyecto, pero sí la primera vez que un
+  test lo atrapó en vivo.
+- 5 tests backend nuevos (86/86 total): múltiples pruebas por orden,
+  orden completa automáticamente cuando se resultan todas, resultado no
+  se puede cargar dos veces, ida y vuelta real de un adjunto (escribir a
+  disco + leer de vuelta, con `monkeypatch` sobre `attachment_storage_
+  root` para no ensuciar el filesystem real en tests), orden sobre
+  consulta inexistente.
+- Frontend: sección "Laboratorio" integrada en `AppointmentDetailDialog`
+  (misma ubicación que "Recetas") — ordenar múltiples pruebas, cargar
+  resultado con checkbox de crítico, adjuntar/descargar archivo. Se
+  agregaron dos helpers nuevos a `api-client.ts` que no existían:
+  `apiUploadFile` (multipart — `apiRequest` solo serializa JSON) y
+  `apiDownloadFile` (blob autenticado — un `<a href>` normal no manda el
+  header `Authorization`). `MedicalPage.integration.test.tsx` extendido
+  con el flujo completo (ordenar → cargar resultado crítico → verificar
+  contra el backend).
+
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
   producto. Datos de prueba truncados al cerrar cada fase.)
@@ -462,8 +681,76 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-20 | #8 hr | DEDUCIBLE | `Employee` es entidad propia, no reutiliza `Contact` — sin flag `is_employee` en `Contact`. Vínculo opcional a `User` vía `user_id`. | Documentado, no requiere confirmación |
 | DED-21 | #8 hr | DEDUCIBLE | Permiso separado `hr:employee:read-sensitive` para ver `salary`; enmascarado a `None` en el router si falta, vía nuevo helper `user_has_permission()`. | Documentado, no requiere confirmación |
 | DED-22 | #8 hr | DEDUCIBLE | "Jerarquías" con dos relaciones independientes: `Department.parent_department_id` (organigrama) y `Employee.manager_employee_id` (línea de reporte), sin obligar a que coincidan. | Documentado, no requiere confirmación |
+| DED-23 | #9 medical | DEDUCIBLE | "Profesional" se modela como `User` directamente, sin entidad `Practitioner` separada. | Documentado, no requiere confirmación — TODO si se necesita agendar personal sin cuenta de login |
+| DED-24 | #9 medical | DEDUCIBLE | Cifrado pgcrypto limitado a `diagnosis_text`/`physical_exam`/`treatment_plan` (Consulta) y `content` (Expediente); `diagnosis_cie10` y `Appointment.reason`/`cancellation_reason` en claro (código estandarizado / no es diagnóstico ni nota clínica). | Documentado, no requiere confirmación (spec 8.2 limita el cifrado explícitamente) |
+| DED-25 | #9 medical | DEDUCIBLE | Corrección de Consulta/Expediente = fila nueva enlazada, nunca UPDATE. "Una consulta vigente por cita" garantizado con `SELECT ... FOR UPDATE`, no con constraint (índice único parcial probado y revertido en Fase 4 — no es diferible en Postgres). | Documentado, no requiere confirmación — ver migración `1669f8fbbc6b` |
+| DED-26 | #9 medical | DEDUCIBLE | Bloqueo de horario real con `EXCLUDE USING gist` (`btree_gist`) en vez de validación de aplicación. | Documentado, no requiere confirmación |
+| AMB-02 | #9 medical | AMBIGUO | Período de retención regulatoria del log de auditoría clínico (spec 8.2) — sin dato de la normativa hondureña aplicable ni de cuánto tiempo quiere Roberto conservarlo. | Abierto — pendiente confirmación de Roberto |
+| DED-27 | #26 notifications | DEDUCIBLE | Motor de Correos = interfaz real (`EmailSender`) + implementación de desarrollo que registra en vez de entregar — sin proveedor SMTP/API configurado (sin salida de red en el sandbox). | Documentado, no requiere confirmación — TODO de despliegue: credenciales del proveedor real |
+| DED-28 | #26 notifications | DEDUCIBLE | Notificación siempre dirigida a `User` interno, nunca a `Contact` — mensajería a terceros es responsabilidad de cada módulo consumidor. | Documentado, no requiere confirmación |
+| DED-29 | #26 notifications | DEDUCIBLE | Plantillas dinámicas con reemplazo `{variable}` simple (sin Jinja2, evita SSTI), placeholder faltante → cadena vacía en vez de error. | Documentado, no requiere confirmación |
+| DED-30 | #10 medical (recetas) | DEDUCIBLE | Una `Prescription` siempre se emite dentro de una `Consultation` — no existe receta "suelta". | Documentado, no requiere confirmación |
+| DED-31 | #10 medical (recetas) | DEDUCIBLE | Cabecera + líneas (`PrescriptionLine`) en vez de una fila por medicamento — una receta real casi siempre lleva más de uno. | Documentado, no requiere confirmación |
+| DED-32 | #10 medical (recetas) | DEDUCIBLE | Sin cifrado pgcrypto en datos de receta — spec 8.2 limita el cifrado explícitamente a diagnóstico/notas de Consulta. | Documentado, no requiere confirmación — corrección de spec si Roberto decide lo contrario |
+| DED-33 | #10 medical (recetas) | DEDUCIBLE | Receta inmutable con anulación (`void`+motivo), no con patrón de corrección encadenada — spec no exige "nunca se sobrescribe" para Recetas explícitamente. | Documentado, no requiere confirmación |
+| DED-34 | #11 medical (laboratorio) | DEDUCIBLE | Cabecera + líneas (`LabOrderTest`) — mismo criterio que Recetas (DED-31), una orden casi siempre pide más de una prueba. | Documentado, no requiere confirmación |
+| DED-35 | #11 medical (laboratorio) | DEDUCIBLE | Orden y resultado en la misma fila (`LabOrderTest`), sin tabla `LabResult` separada — el resultado completa campos que ya existen en la línea de la orden. | Documentado, no requiere confirmación |
+| DED-36 | #11 medical (laboratorio) | DEDUCIBLE | Marcado de valor crítico explícito (checkbox), no inferido comparando contra el rango de referencia — formatos heterogéneos sin unidad normalizada, sin catálogo de pruebas. | Documentado, no requiere confirmación — TODO si se necesita cálculo automático con un catálogo de pruebas |
 
 ## 5. Resumen rodante (solo los últimos 3 módulos cerrados)
+- Módulo 11 (medical — laboratorio) — **Fases 1-4 completas.** Cabecera
+  (`LabOrder`) + líneas (`LabOrderTest`, DED-34), orden/resultado en la
+  misma fila (DED-35), orden pasa a `completed` automáticamente cuando
+  se resultan todas sus pruebas, valor crítico marcado explícitamente
+  (DED-36). **Primer uso real de `core.Attachment`** (tabla existente
+  desde el módulo 1, nunca antes conectada) — `AttachmentService`
+  genérico con almacenamiento en disco local (DEDUCIBLE, sin proveedor
+  real en el sandbox), expuesto vía endpoints anidados por módulo
+  consumidor, no un `POST /attachments` universal. **Hallazgo real de
+  Fase 4**: la orden no completaba automáticamente por un `autoflush=
+  False` (decisión ya existente de `core`) que ocultaba el cambio recién
+  hecho en memoria al chequeo de "todas resultadas" — corregido con
+  `flush()` explícito. Contrato re-congelado: 96 rutas (90+6). 5 tests
+  backend nuevos (86/86 total). Frontend: sección "Laboratorio" en
+  `AppointmentDetailDialog` + dos helpers nuevos en `api-client.ts`
+  (`apiUploadFile`, `apiDownloadFile` — `apiRequest` solo sabe JSON).
+- Módulo 10 (medical — recetas) — **Fases 1-4 completas.** Cabecera
+  (`Prescription`) + líneas (`PrescriptionLine`, DED-31), `dispensing_
+  status` calculado según paquete `pharmacy` activo (DED-30), sin
+  cifrado pgcrypto (DED-32, spec limita el cifrado a Consulta), inmutable
+  con anulación en vez de edición (DED-33). Contrato re-congelado: 90
+  rutas (86+4). 5 tests backend nuevos (81/81 total) — **todos al primer
+  intento, sin hallazgos reales de Fase 4** (a diferencia de casi todos
+  los módulos anteriores). Frontend: sección "Recetas" integrada en
+  `AppointmentDetailDialog`, flujo completo verificado en
+  `MedicalPage.integration.test.tsx` (emitir → `dispensing_status` real
+  → anular → persiste).
+- Módulo 26 (notifications) — **Fases 1-4 completas.** Transversal — sin
+  `require_package`. Motor de Correos como interfaz real con
+  implementación de desarrollo (sin proveedor SMTP configurado en el
+  sandbox), Plantillas Dinámicas con reemplazo `{variable}` seguro (sin
+  Jinja2). **Hallazgo real**: `openapi-zod-client` emite la firma Zod v3
+  de `z.record()` para `dict[str,str]`, incompatible con Zod v4 —
+  parcheado puntualmente en `schemas.ts`, documentado in situ. Contrato
+  re-congelado: 86 rutas (80+6). 11 tests backend nuevos (76/76 total).
+  Frontend: campana global (`NotificationBell`, contador de no leídas,
+  poll 30s) + página de gestión de plantillas y envío manual, con test
+  de integración que verifica lectura real (no solo UI). Se corrigió
+  también `bootstrap_admin.py` para no asumir `company_id=1`.
+- Módulo 9 (medical) — **Fases 1-4 completas.** Expediente Clínico +
+  Agenda Médica + Consulta. Primer uso real de `pgcrypto` en el proyecto
+  y primer `EXCLUDE USING gist` (bloqueo de horario, verificado con
+  concurrencia real: 8 inserts simultáneos → gana 1). **Dos hallazgos
+  reales**: (1) Fase 4 backend — un índice único parcial para "una
+  consulta vigente por cita" no es diferible en Postgres, revertido a
+  favor de `SELECT ... FOR UPDATE`; (2) Fase 3 frontend — faltaba
+  `GET /medical/appointments/{id}/consultation` (Fase 2 nunca contempló
+  recuperar la consulta de una cita ya completada sin conocer su id).
+  Contrato re-congelado: 80 rutas (68+12). 65/65 tests backend (15
+  nuevos). Frontend completo (`MedicalPage` + 2 diálogos), con
+  verificación RBAC "own patients" real contra la API (403 genuino, no
+  solo ocultamiento en la UI). AMB-02 (retención de auditoría clínica)
+  sigue abierta.
 - Módulo 8 (hr): **Fases 1-4 completas.** Legajo, Estructura
   Organizacional, Jerarquías. Enmascarado de `salary` por permiso
   separado verificado end-to-end real, incluido en el test de
@@ -560,6 +847,46 @@ spec 7.1) — **Fases 1-4 completas**
   `accounting`, sin bloqueo técnico ya que está construido), Control de
   Asistencia y Horarios, Ausencias y Vacaciones, Evaluación de Desempeño,
   Reclutamiento.
+- TODO-23(medical): **Resuelto en este cierre.** Fases 1-4 completas:
+  backend (modelos, `pgcrypto`, `EXCLUDE USING gist`, servicios, routers,
+  80 rutas, 15 tests backend) + frontend (`MedicalPage` + 2 diálogos,
+  test de integración con verificación RBAC real).
+- TODO-24([extendido], módulos 12-15 medical): teleconsulta, facturación
+  médica básica, portal/mensajería paciente-médico, reserva pública de
+  citas — módulos separados en la tabla, no construidos todavía (regla 1
+  del Mensaje 0: no adelantar módulos futuros). Módulo 11 (laboratorio)
+  se resolvió en este cierre — ver TODO-30. Módulo 15 (reserva pública)
+  sigue dependiendo de `website` (módulo 22, tampoco construido).
+- TODO-25(notifications): **Resuelto en este cierre.** Fases 1-4
+  completas: backend (86 rutas, 11 tests) + frontend (campana global +
+  página de plantillas/envío).
+- TODO-26([extendido] notifications): Canales Adicionales (SMS, push),
+  Preferencias por Usuario (silenciar tipos de notificación, elegir
+  canal por defecto).
+- TODO-27(notifications, despliegue): reemplazar `LoggingEmailSender` por
+  una implementación real (SES/SendGrid/etc.) cuando haya credenciales de
+  un proveedor SMTP/API configurables — sin bloqueo técnico, la interfaz
+  ya está lista (DED-27).
+- TODO-28(medical — recetas, módulo 10): **Resuelto en este cierre.**
+  Fases 1-4 completas: backend (90 rutas, 5 tests) + frontend (sección
+  "Recetas" en `AppointmentDetailDialog`).
+- TODO-29(medical — recetas, integración futura): cuando se construya
+  Farmacéutico (módulo 16+), ese módulo es quien transiciona
+  `dispensing_status` de `pending` a `dispensed` — `medical` no tiene
+  ningún endpoint que lo haga, por diseño (ver DED-30 en STATE.md
+  sección "recetas").
+- TODO-30(medical — laboratorio, módulo 11): **Resuelto en este cierre.**
+  Fases 1-4 completas: backend (96 rutas, 5 tests, primer uso real de
+  `core.Attachment`) + frontend (sección "Laboratorio" en
+  `AppointmentDetailDialog`).
+- TODO-31(medical — laboratorio, extensión futura): catálogo de pruebas
+  (`test_catalog`) con rangos de referencia estructurados por prueba y
+  unidad normalizada, para poder calcular `is_critical` automáticamente
+  en vez de depender del checkbox manual (DED-36).
+- TODO-32(core — attachments, extensión futura): `AttachmentService`
+  usa disco local (`attachment_storage_root`) — reemplazar por un backend
+  de object storage real (S3/GCS/etc.) cuando haya credenciales de un
+  proveedor configurables, mismo criterio que TODO-27 (notifications).
 
 ## 7. Proyecto de migración (si aplica)
 - Estado: sin proyecto de migración contratado.

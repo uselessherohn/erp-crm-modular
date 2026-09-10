@@ -128,4 +128,69 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
   return responseSchema ? (responseSchema.parse(data) as T) : (data as T);
 }
 
+/**
+ * Subida de archivos (multipart/form-data) — `apiRequest` siempre
+ * serializa el body como JSON, así que un adjunto real (ej. resultado de
+ * laboratorio, spec 8.2) necesita este camino aparte. Mismo manejo de
+ * token/401 que `apiRequest`, sin `Content-Type` explícito (el browser lo
+ * arma con el boundary correcto para `FormData`).
+ */
+export async function apiUploadFile<T = unknown>(
+  path: string, file: File, options: { responseSchema?: z.ZodTypeAny } = {}
+): Promise<T> {
+  const url = new URL(path, BASE_URL);
+  const doFetch = async () => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    const token = getAccessToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(url.toString(), { method: "POST", headers, body: formData });
+  };
+
+  let res = await doFetch();
+  if (res.status === 401 && getRefreshToken()) {
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken().finally(() => {
+        refreshPromise = null;
+      });
+    }
+    try {
+      await refreshPromise;
+      res = await doFetch();
+    } catch {
+      // el refresh falló — se propaga el 401 original abajo
+    }
+  }
+
+  if (!res.ok) {
+    await parseErrorBody(res);
+  }
+  const data = await res.json();
+  return options.responseSchema ? (options.responseSchema.parse(data) as T) : (data as T);
+}
+
+/**
+ * Descarga de adjuntos — igual que la subida, no es JSON. El navegador no
+ * manda el header `Authorization` en un `<a href>` normal, así que se pide
+ * como blob con fetch autenticado y se dispara la descarga desde ahí.
+ */
+export async function apiDownloadFile(path: string, suggestedFilename: string): Promise<void> {
+  const url = new URL(path, BASE_URL);
+  const headers: Record<string, string> = {};
+  const token = getAccessToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) {
+    await parseErrorBody(res);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = suggestedFilename;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export { schemas };

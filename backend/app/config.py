@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     # de superadmin propio cuando exista (fuera de alcance de core v1).
     internal_api_key: str = "CHANGE_ME_IN_PRODUCTION_ENV"
 
+    # Almacenamiento de adjuntos (spec 8.2, "carga de resultados vía
+    # attachments") — DEDUCIBLE: disco local en desarrollo/sandbox (sin
+    # acceso de red a un proveedor de object storage real, mismo tipo de
+    # limitación que `pgcrypto_key`/`EmailSender`). Producción reemplaza
+    # esto por un backend real (S3/GCS/etc.) detrás de la misma interfaz
+    # de `AttachmentService` — el resto del sistema no cambia.
+    attachment_storage_root: str = "./storage/attachments"
+
     # CORS (hallazgo de Fase 3: el frontend en otro origen necesita esto
     # para hablar con la API) — orígenes explícitos, nunca "*" porque las
     # rutas autenticadas usan Authorization header con credenciales reales.

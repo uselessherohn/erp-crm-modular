@@ -1,8 +1,9 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useCurrentUser, useLogout } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/NotificationBell";
 import { cn } from "@/lib/utils";
-import { Users, ShieldCheck, LogOut, Contact, Package, Warehouse, Boxes, ClipboardList, Tags, FileText, ShoppingCart, Landmark, Receipt, Wallet, FileMinus, GitBranch, IdCard } from "lucide-react";
+import { Users, ShieldCheck, LogOut, Contact, Package, Warehouse, Boxes, ClipboardList, Tags, FileText, ShoppingCart, Landmark, Receipt, Wallet, FileMinus, GitBranch, IdCard, Stethoscope, MessageSquare } from "lucide-react";
 
 // El menú se muestra igual para todos los usuarios autenticados — el
 // backend ya aplica RBAC (403 si falta el permiso); no duplicamos esa
@@ -23,6 +24,8 @@ const NAV_ITEMS = [
   { to: "/credit-debit-notes", label: "Notas C/D", icon: FileMinus },
   { to: "/pipeline", label: "Pipeline", icon: GitBranch },
   { to: "/employees", label: "Recursos Humanos", icon: IdCard },
+  { to: "/medical", label: "Médico", icon: Stethoscope },
+  { to: "/notifications-admin", label: "Notificaciones", icon: MessageSquare },
   { to: "/users", label: "Usuarios", icon: Users },
   { to: "/roles", label: "Roles", icon: ShieldCheck },
 ];
@@ -71,8 +74,13 @@ export function AppLayout() {
           </Button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto p-8">
-        <Outlet />
+      <main className="flex-1 overflow-auto">
+        <header className="flex justify-end border-b border-border px-8 py-3">
+          <NotificationBell />
+        </header>
+        <div className="p-8">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

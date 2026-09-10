@@ -17,6 +17,8 @@ import { PaymentsPage } from "@/pages/PaymentsPage";
 import { CreditDebitNotesPage } from "@/pages/CreditDebitNotesPage";
 import { PipelinePage } from "@/pages/PipelinePage";
 import { EmployeesPage } from "@/pages/EmployeesPage";
+import { MedicalPage } from "@/pages/MedicalPage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
 import { AppLayout } from "@/layouts/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
@@ -57,6 +59,8 @@ export function App() {
             <Route path="/credit-debit-notes" element={<CreditDebitNotesPage />} />
             <Route path="/pipeline" element={<PipelinePage />} />
             <Route path="/employees" element={<EmployeesPage />} />
+            <Route path="/medical" element={<MedicalPage />} />
+            <Route path="/notifications-admin" element={<NotificationsPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/roles" element={<RolesPage />} />
           </Route>

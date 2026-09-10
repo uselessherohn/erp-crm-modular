@@ -842,6 +842,266 @@ const EmployeeRead = z
 const EmployeeTerminate = z
   .object({ termination_date: z.string() })
   .passthrough();
+const ClinicalRecordEntryTypeEnum = z.enum([
+  "antecedent",
+  "allergy",
+  "diagnosis",
+  "note",
+]);
+const ClinicalRecordEntryCreate = z
+  .object({
+    patient_contact_id: z.number().int(),
+    entry_type: ClinicalRecordEntryTypeEnum,
+    content: z.string().min(1),
+    previous_entry_id: z.union([z.number(), z.null()]).optional(),
+  })
+  .passthrough();
+const ClinicalRecordEntryRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    entry_type: ClinicalRecordEntryTypeEnum,
+    content: z.string(),
+    previous_entry_id: z.union([z.number(), z.null()]),
+    author_user_id: z.number().int(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const AppointmentCreate = z
+  .object({
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    scheduled_start: z.string().datetime({ offset: true }),
+    scheduled_end: z.string().datetime({ offset: true }),
+    reason: z.union([z.string(), z.null()]).optional(),
+  })
+  .passthrough();
+const AppointmentStatusEnum = z.enum([
+  "scheduled",
+  "confirmed",
+  "completed",
+  "cancelled",
+  "no_show",
+]);
+const AppointmentRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    scheduled_start: z.string().datetime({ offset: true }),
+    scheduled_end: z.string().datetime({ offset: true }),
+    status: AppointmentStatusEnum,
+    reason: z.union([z.string(), z.null()]),
+    cancellation_reason: z.union([z.string(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const AppointmentReschedule = z
+  .object({
+    scheduled_start: z.string().datetime({ offset: true }),
+    scheduled_end: z.string().datetime({ offset: true }),
+    reason: z.string().min(1).max(500),
+  })
+  .passthrough();
+const AppointmentCancel = z
+  .object({ cancellation_reason: z.string().min(1).max(500) })
+  .passthrough();
+const ConsultationRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    appointment_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    physical_exam: z.union([z.string(), z.null()]),
+    diagnosis_cie10: z.union([z.string(), z.null()]),
+    diagnosis_text: z.union([z.string(), z.null()]),
+    treatment_plan: z.union([z.string(), z.null()]),
+    previous_consultation_id: z.union([z.number(), z.null()]),
+    superseded_by_id: z.union([z.number(), z.null()]),
+    created_by: z.number().int(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const ConsultationCreate = z
+  .object({
+    appointment_id: z.number().int(),
+    physical_exam: z.union([z.string(), z.null()]).optional(),
+    diagnosis_cie10: z.union([z.string(), z.null()]).optional(),
+    diagnosis_text: z.union([z.string(), z.null()]).optional(),
+    treatment_plan: z.union([z.string(), z.null()]).optional(),
+  })
+  .passthrough();
+const ConsultationCorrect = z
+  .object({
+    physical_exam: z.union([z.string(), z.null()]),
+    diagnosis_cie10: z.union([z.string(), z.null()]),
+    diagnosis_text: z.union([z.string(), z.null()]),
+    treatment_plan: z.union([z.string(), z.null()]),
+  })
+  .partial()
+  .passthrough();
+const PrescriptionLineCreate = z
+  .object({
+    medication_name: z.string().min(1).max(300),
+    dosage: z.string().min(1).max(100),
+    route: z.string().min(1).max(100),
+    frequency: z.string().min(1).max(100),
+    duration: z.string().min(1).max(100),
+  })
+  .passthrough();
+const PrescriptionCreate = z
+  .object({
+    consultation_id: z.number().int(),
+    notes: z.union([z.string(), z.null()]).optional(),
+    lines: z.array(PrescriptionLineCreate).min(1),
+  })
+  .passthrough();
+const PrescriptionDispensingStatusEnum = z.enum([
+  "not_applicable",
+  "pending",
+  "dispensed",
+]);
+const PrescriptionLineRead = z
+  .object({
+    id: z.number().int(),
+    medication_name: z.string(),
+    dosage: z.string(),
+    route: z.string(),
+    frequency: z.string(),
+    duration: z.string(),
+    dispensing_status: PrescriptionDispensingStatusEnum,
+  })
+  .passthrough();
+const PrescriptionRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    consultation_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    notes: z.union([z.string(), z.null()]),
+    voided_at: z.union([z.string(), z.null()]),
+    void_reason: z.union([z.string(), z.null()]),
+    issued_at: z.string().datetime({ offset: true }),
+    created_by: z.number().int(),
+    lines: z.array(PrescriptionLineRead),
+  })
+  .passthrough();
+const PrescriptionVoid = z
+  .object({ void_reason: z.string().min(1).max(500) })
+  .passthrough();
+const LabOrderTestRequest = z
+  .object({ test_name: z.string().min(1).max(300) })
+  .passthrough();
+const LabOrderCreate = z
+  .object({
+    consultation_id: z.number().int(),
+    tests: z.array(LabOrderTestRequest).min(1),
+  })
+  .passthrough();
+const LabOrderStatusEnum = z.enum(["ordered", "completed", "cancelled"]);
+const LabOrderTestStatusEnum = z.enum(["pending", "resulted"]);
+const LabOrderTestRead = z
+  .object({
+    id: z.number().int(),
+    test_name: z.string(),
+    status: LabOrderTestStatusEnum,
+    result_value: z.union([z.string(), z.null()]),
+    result_unit: z.union([z.string(), z.null()]),
+    reference_range_text: z.union([z.string(), z.null()]),
+    is_critical: z.boolean(),
+    resulted_at: z.union([z.string(), z.null()]),
+    resulted_by: z.union([z.number(), z.null()]),
+  })
+  .passthrough();
+const LabOrderRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    consultation_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    status: LabOrderStatusEnum,
+    ordered_at: z.string().datetime({ offset: true }),
+    created_by: z.number().int(),
+    tests: z.array(LabOrderTestRead),
+  })
+  .passthrough();
+const LabOrderTestResult = z
+  .object({
+    result_value: z.string().min(1).max(300),
+    result_unit: z.union([z.string(), z.null()]).optional(),
+    reference_range_text: z.union([z.string(), z.null()]).optional(),
+    is_critical: z.boolean().optional().default(false),
+  })
+  .passthrough();
+const Body_upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post =
+  z.object({ file: z.string() }).passthrough();
+const AttachmentRead = z
+  .object({
+    id: z.number().int(),
+    entity_type: z.string(),
+    entity_id: z.number().int(),
+    filename: z.string(),
+    mime_type: z.string(),
+    uploaded_by: z.number().int(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const NotificationTemplateCreate = z
+  .object({
+    code: z.string().min(1).max(100),
+    subject_template: z.string().min(1).max(300),
+    body_template: z.string().min(1),
+  })
+  .passthrough();
+const NotificationTemplateRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    code: z.string(),
+    subject_template: z.string(),
+    body_template: z.string(),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const NotificationTemplateUpdate = z
+  .object({
+    subject_template: z.union([z.string(), z.null()]),
+    body_template: z.union([z.string(), z.null()]),
+  })
+  .partial()
+  .passthrough();
+const NotificationChannelEnum = z.enum(["in_app", "email"]);
+const NotificationSend = z
+  .object({
+    recipient_user_id: z.number().int(),
+    channel: NotificationChannelEnum.optional(),
+    title: z.union([z.string(), z.null()]).optional(),
+    body: z.union([z.string(), z.null()]).optional(),
+    template_code: z.union([z.string(), z.null()]).optional(),
+    context: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
+const NotificationRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    recipient_user_id: z.number().int(),
+    channel: NotificationChannelEnum,
+    title: z.string(),
+    body: z.string(),
+    template_code: z.union([z.string(), z.null()]),
+    email_status: z.union([z.string(), z.null()]),
+    read_at: z.union([z.string(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
 
 export const schemas = {
   CompanyCreate,
@@ -940,4 +1200,36 @@ export const schemas = {
   EmployeeStatusEnum,
   EmployeeRead,
   EmployeeTerminate,
+  ClinicalRecordEntryTypeEnum,
+  ClinicalRecordEntryCreate,
+  ClinicalRecordEntryRead,
+  AppointmentCreate,
+  AppointmentStatusEnum,
+  AppointmentRead,
+  AppointmentReschedule,
+  AppointmentCancel,
+  ConsultationRead,
+  ConsultationCreate,
+  ConsultationCorrect,
+  PrescriptionLineCreate,
+  PrescriptionCreate,
+  PrescriptionDispensingStatusEnum,
+  PrescriptionLineRead,
+  PrescriptionRead,
+  PrescriptionVoid,
+  LabOrderTestRequest,
+  LabOrderCreate,
+  LabOrderStatusEnum,
+  LabOrderTestStatusEnum,
+  LabOrderTestRead,
+  LabOrderRead,
+  LabOrderTestResult,
+  Body_upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post,
+  AttachmentRead,
+  NotificationTemplateCreate,
+  NotificationTemplateRead,
+  NotificationTemplateUpdate,
+  NotificationChannelEnum,
+  NotificationSend,
+  NotificationRead,
 };
