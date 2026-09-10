@@ -64,7 +64,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 50/50 esperados
+pytest tests/ -q   # 86/86 esperados
 
 # Frontend
 cd frontend
@@ -85,7 +85,7 @@ npx vitest run       # suite de integración real contra el backend de arriba
   `LOG_EJECUCION.md`. Es la bitácora cronológica completa, módulo por
   módulo, fase por fase.
 - **¿Quieres el contrato de API vigente?** → `contracts/openapi.json`
-  (63+ rutas al momento de este corte).
+  (96 rutas al momento de este corte).
 - **¿Quieres la tabla de módulos y dependencias del sistema completo?** →
   `modulos_erp_crm_v10_4.json` (26 módulos totales planeados).
 
