@@ -16,6 +16,8 @@ lectura.
 """
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -686,3 +688,151 @@ class LabOrderService:
         return await AttachmentService.list_for_entity(
             db, company_id=company_id, entity_type="lab_order_test", entity_id=lab_order_test_id
         )
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 12 — Teleconsulta. Ver DED-37/38/39 en models.py.
+# ---------------------------------------------------------------------------------------------
+import abc
+
+
+class TeleconsultationProvider(abc.ABC):
+    @abc.abstractmethod
+    async def create_room(self, *, appointment_id: int) -> tuple[str, str]:
+        """Devuelve (room_external_id, join_url)."""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def end_room(self, *, room_external_id: str) -> None:
+        raise NotImplementedError
+
+
+class DevStubTeleconsultationProvider(TeleconsultationProvider):
+    """Implementación de desarrollo (DED-37) — el sandbox de este proyecto
+    no tiene salida de red hacia Twilio/Daily/etc. Genera una URL de sala
+    local determinística, sin llamar a ningún proveedor real. Producción
+    inyecta un cliente real detrás de la misma interfaz."""
+
+    async def create_room(self, *, appointment_id: int) -> tuple[str, str]:
+        room_id = f"dev-{uuid.uuid4().hex}"
+        return room_id, f"https://teleconsulta.local/dev-room/{room_id}?appointment={appointment_id}"
+
+    async def end_room(self, *, room_external_id: str) -> None:
+        return None
+
+
+_default_teleconsultation_provider: TeleconsultationProvider = DevStubTeleconsultationProvider()
+
+
+class TeleconsultationService:
+    @staticmethod
+    async def create(
+        db: AsyncSession, *, company_id: int, payload: schemas.TeleconsultationSessionCreate, created_by: int,
+        provider: TeleconsultationProvider | None = None,
+    ) -> models.TeleconsultationSession:
+        appointment = await AppointmentService._get_locked(
+            db, company_id=company_id, appointment_id=payload.appointment_id
+        )
+        if appointment.status not in ("scheduled", "confirmed"):
+            raise ConflictError(
+                f"No se puede abrir una sala de teleconsulta para una cita en estado '{appointment.status}'"
+            )
+
+        existing = await db.execute(
+            select(models.TeleconsultationSession.id).where(
+                models.TeleconsultationSession.appointment_id == appointment.id,
+                models.TeleconsultationSession.status.in_(("scheduled", "active")),
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise ConflictError("Esta cita ya tiene una sesión de teleconsulta activa")
+
+        active_provider = provider or _default_teleconsultation_provider
+        room_external_id, join_url = await active_provider.create_room(appointment_id=appointment.id)
+
+        session = models.TeleconsultationSession(
+            company_id=company_id, appointment_id=appointment.id,
+            patient_contact_id=appointment.patient_contact_id, professional_user_id=appointment.professional_user_id,
+            provider=active_provider.__class__.__name__, room_external_id=room_external_id, join_url=join_url,
+            created_by=created_by,
+        )
+        db.add(session)
+        await db.flush()
+
+        await AuditService.log_event(
+            db, company_id=company_id, event="medical.teleconsultation.create", entity_type="teleconsultation_session",
+            entity_id=session.id, user_id=created_by,
+        )
+        await db.commit()
+        await db.refresh(session)
+        return session
+
+    @staticmethod
+    async def get(db: AsyncSession, *, company_id: int, session_id: int) -> models.TeleconsultationSession:
+        result = await db.execute(
+            select(models.TeleconsultationSession).where(
+                models.TeleconsultationSession.company_id == company_id, models.TeleconsultationSession.id == session_id
+            )
+        )
+        session = result.scalar_one_or_none()
+        if session is None:
+            raise NotFoundError(f"Sesión de teleconsulta {session_id} no encontrada")
+        return session
+
+    @staticmethod
+    async def get_by_appointment(db: AsyncSession, *, company_id: int, appointment_id: int) -> models.TeleconsultationSession | None:
+        result = await db.execute(
+            select(models.TeleconsultationSession).where(
+                models.TeleconsultationSession.company_id == company_id,
+                models.TeleconsultationSession.appointment_id == appointment_id,
+                models.TeleconsultationSession.status.in_(("scheduled", "active", "ended")),
+            ).order_by(models.TeleconsultationSession.created_at.desc())
+        )
+        return result.scalars().first()
+
+    @staticmethod
+    async def start(db: AsyncSession, *, company_id: int, session_id: int) -> models.TeleconsultationSession:
+        result = await db.execute(
+            select(models.TeleconsultationSession)
+            .where(models.TeleconsultationSession.company_id == company_id, models.TeleconsultationSession.id == session_id)
+            .with_for_update()
+        )
+        session = result.scalar_one_or_none()
+        if session is None:
+            raise NotFoundError(f"Sesión de teleconsulta {session_id} no encontrada")
+        if session.status != "scheduled":
+            raise ConflictError(f"Solo una sesión 'scheduled' puede iniciarse (estado actual: {session.status})")
+
+        from sqlalchemy import func as sa_func
+
+        session.status = "active"
+        session.started_at = sa_func.now()
+        await db.commit()
+        await db.refresh(session)
+        return session
+
+    @staticmethod
+    async def end(
+        db: AsyncSession, *, company_id: int, session_id: int, provider: TeleconsultationProvider | None = None
+    ) -> models.TeleconsultationSession:
+        result = await db.execute(
+            select(models.TeleconsultationSession)
+            .where(models.TeleconsultationSession.company_id == company_id, models.TeleconsultationSession.id == session_id)
+            .with_for_update()
+        )
+        session = result.scalar_one_or_none()
+        if session is None:
+            raise NotFoundError(f"Sesión de teleconsulta {session_id} no encontrada")
+        if session.status not in ("scheduled", "active"):
+            raise ConflictError(f"No se puede finalizar una sesión en estado '{session.status}'")
+
+        active_provider = provider or _default_teleconsultation_provider
+        await active_provider.end_room(room_external_id=session.room_external_id)
+
+        from sqlalchemy import func as sa_func
+
+        session.status = "ended"
+        session.ended_at = sa_func.now()
+        await db.commit()
+        await db.refresh(session)
+        return session

@@ -31,6 +31,7 @@ from app.medical.services import (
     ConsultationService,
     LabOrderService,
     PrescriptionService,
+    TeleconsultationService,
     professional_has_treated,
 )
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
@@ -739,3 +740,137 @@ async def test_lab_order_requires_existing_consultation(db, company, professiona
             ]),
             created_by=professional.id,
         )
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 12 — Teleconsulta
+# ---------------------------------------------------------------------------------------------------------
+class _FakeTeleconsultationProvider:
+    def __init__(self):
+        self.created_rooms: list[int] = []
+        self.ended_rooms: list[str] = []
+
+    async def create_room(self, *, appointment_id: int):
+        self.created_rooms.append(appointment_id)
+        return f"fake-room-{appointment_id}", f"https://fake.test/room/{appointment_id}"
+
+    async def end_room(self, *, room_external_id: str) -> None:
+        self.ended_rooms.append(room_external_id)
+
+
+@pytest.mark.asyncio
+async def test_teleconsultation_create_generates_join_url(db, company, patient, professional):
+    appointment = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE, _BASE + timedelta(minutes=30)),
+        created_by=None,
+    )
+    session = await TeleconsultationService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.TeleconsultationSessionCreate(appointment_id=appointment.id),
+        created_by=professional.id,
+    )
+    assert session.status == "scheduled"
+    assert session.join_url
+    assert session.patient_contact_id == patient.id
+
+
+@pytest.mark.asyncio
+async def test_teleconsultation_uses_injected_provider_not_real_one(db, company, patient, professional):
+    appointment = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE, _BASE + timedelta(minutes=30)),
+        created_by=None,
+    )
+    fake_provider = _FakeTeleconsultationProvider()
+    session = await TeleconsultationService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.TeleconsultationSessionCreate(appointment_id=appointment.id),
+        created_by=professional.id, provider=fake_provider,
+    )
+    assert fake_provider.created_rooms == [appointment.id]
+    assert session.join_url == f"https://fake.test/room/{appointment.id}"
+
+
+@pytest.mark.asyncio
+async def test_teleconsultation_only_one_active_per_appointment(db, company, patient, professional):
+    appointment = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE, _BASE + timedelta(minutes=30)),
+        created_by=None,
+    )
+    await TeleconsultationService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.TeleconsultationSessionCreate(appointment_id=appointment.id),
+        created_by=professional.id,
+    )
+    with pytest.raises(ConflictError):
+        await TeleconsultationService.create(
+            db, company_id=company.id,
+            payload=medical_schemas.TeleconsultationSessionCreate(appointment_id=appointment.id),
+            created_by=professional.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_teleconsultation_cannot_create_for_cancelled_appointment(db, company, patient, professional):
+    appointment = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE, _BASE + timedelta(minutes=30)),
+        created_by=None,
+    )
+    await AppointmentService.cancel(
+        db, company_id=company.id, appointment_id=appointment.id,
+        payload=medical_schemas.AppointmentCancel(cancellation_reason="No asistió"),
+    )
+    with pytest.raises(ConflictError):
+        await TeleconsultationService.create(
+            db, company_id=company.id,
+            payload=medical_schemas.TeleconsultationSessionCreate(appointment_id=appointment.id),
+            created_by=professional.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_teleconsultation_start_and_end_lifecycle(db, company, patient, professional):
+    appointment = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE, _BASE + timedelta(minutes=30)),
+        created_by=None,
+    )
+    session = await TeleconsultationService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.TeleconsultationSessionCreate(appointment_id=appointment.id),
+        created_by=professional.id,
+    )
+    started = await TeleconsultationService.start(db, company_id=company.id, session_id=session.id)
+    assert started.status == "active"
+    assert started.started_at is not None
+
+    fake_provider = _FakeTeleconsultationProvider()
+    ended = await TeleconsultationService.end(db, company_id=company.id, session_id=session.id, provider=fake_provider)
+    assert ended.status == "ended"
+    assert ended.ended_at is not None
+    assert fake_provider.ended_rooms == [session.room_external_id]
+
+    with pytest.raises(ConflictError):
+        await TeleconsultationService.end(db, company_id=company.id, session_id=session.id)
+
+
+@pytest.mark.asyncio
+async def test_teleconsultation_get_by_appointment_returns_latest(db, company, patient, professional):
+    appointment = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE, _BASE + timedelta(minutes=30)),
+        created_by=None,
+    )
+    assert await TeleconsultationService.get_by_appointment(db, company_id=company.id, appointment_id=appointment.id) is None
+
+    session = await TeleconsultationService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.TeleconsultationSessionCreate(appointment_id=appointment.id),
+        created_by=professional.id,
+    )
+    found = await TeleconsultationService.get_by_appointment(db, company_id=company.id, appointment_id=appointment.id)
+    assert found is not None
+    assert found.id == session.id

@@ -123,6 +123,9 @@ async def bootstrap():
             models.Permission(code="medical:lab_order:create", description="Ordenar laboratorio / cargar resultado"),
             models.Permission(code="medical:lab_order:read-own-patients", description="Ver laboratorio de pacientes propios"),
             models.Permission(code="medical:lab_order:read-all", description="Ver laboratorio de cualquier paciente"),
+            models.Permission(code="medical:teleconsultation:create", description="Abrir/iniciar/finalizar sesión de teleconsulta"),
+            models.Permission(code="medical:teleconsultation:read-own-patients", description="Ver teleconsulta de pacientes propios"),
+            models.Permission(code="medical:teleconsultation:read-all", description="Ver teleconsulta de cualquier paciente"),
         ]
         db.add_all(perms)
         await db.flush()

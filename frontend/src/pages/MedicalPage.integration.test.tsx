@@ -94,6 +94,35 @@ describe("MedicalPage — flujo real de medical contra backend en 127.0.0.1:8000
     await user.click(await within(dialog).findByRole("button", { name: /^confirmar$/i }));
     await waitFor(() => expect(within(dialog).getByRole("button", { name: /registrar consulta/i })).toBeInTheDocument());
 
+    // Se resuelven acá (antes que en el cierre original) porque el flujo
+    // de Teleconsulta que sigue ya necesita el id real de la cita.
+    const appointments = await apiRequest<Array<{ id: number; patient_contact_id: number }>>("/medical/appointments");
+    const patients = await apiRequest<Array<{ id: number; name: string }>>("/contacts", { query: { search: patientName } });
+    const patientId = patients.find((p) => p.name === patientName)?.id;
+    const appointment = appointments.find((a) => a.patient_contact_id === patientId);
+    expect(appointment).toBeTruthy();
+
+    // Módulo 12 — Teleconsulta: crear sala, iniciarla, y finalizarla,
+    // verificando cada transición real contra el backend (la sección
+    // aparece independiente de si ya hay consulta registrada — está
+    // vinculada a la cita, no a la consulta).
+    await user.click(within(dialog).getByRole("button", { name: /crear sala de videollamada/i }));
+    await waitFor(() => expect(within(dialog).getByText(/sala creada/i)).toBeInTheDocument(), { timeout: 10000 });
+    expect(within(dialog).getByRole("link", { name: /abrir sala/i })).toHaveAttribute("href", expect.stringContaining("teleconsulta.local"));
+
+    await user.click(within(dialog).getByRole("button", { name: /^iniciar$/i }));
+    await waitFor(() => expect(within(dialog).getByText(/en curso/i)).toBeInTheDocument(), { timeout: 10000 });
+
+    await user.click(within(dialog).getByRole("button", { name: /^finalizar$/i }));
+    await waitFor(() => expect(within(dialog).getByText(/finalizada/i)).toBeInTheDocument(), { timeout: 10000 });
+
+    const teleconsultation = await apiRequest<{ status: string; started_at: string | null; ended_at: string | null }>(
+      `/medical/appointments/${appointment!.id}/teleconsultation`
+    );
+    expect(teleconsultation.status).toBe("ended");
+    expect(teleconsultation.started_at).toBeTruthy();
+    expect(teleconsultation.ended_at).toBeTruthy();
+
     await user.click(within(dialog).getByRole("button", { name: /registrar consulta/i }));
     const diagnosisText = `Diagnóstico de prueba ${Date.now()}`;
     await user.type(within(dialog).getByLabelText("Diagnóstico"), diagnosisText);
@@ -104,11 +133,6 @@ describe("MedicalPage — flujo real de medical contra backend en 127.0.0.1:8000
     // Verificación real contra el backend: el diagnóstico viaja cifrado en
     // reposo pero descifrado en la respuesta de la API (comportamiento
     // esperado, no un leak — ver DED-24).
-    const appointments = await apiRequest<Array<{ id: number; patient_contact_id: number }>>("/medical/appointments");
-    const patients = await apiRequest<Array<{ id: number; name: string }>>("/contacts", { query: { search: patientName } });
-    const patientId = patients.find((p) => p.name === patientName)?.id;
-    const appointment = appointments.find((a) => a.patient_contact_id === patientId);
-    expect(appointment).toBeTruthy();
 
     const consultation = await apiRequest<{ diagnosis_text: string | null }>(
       `/medical/appointments/${appointment!.id}/consultation`

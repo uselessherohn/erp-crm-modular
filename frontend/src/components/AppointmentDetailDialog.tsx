@@ -20,6 +20,10 @@ import {
   useLabOrderTestAttachments,
   useUploadLabOrderTestAttachment,
   downloadMedicalAttachment,
+  useTeleconsultationForAppointment,
+  useCreateTeleconsultation,
+  useStartTeleconsultation,
+  useEndTeleconsultation,
 } from "@/hooks/use-medical";
 import { useContacts } from "@/hooks/use-contacts";
 import { useUsers } from "@/hooks/use-core-data";
@@ -187,6 +191,8 @@ export function AppointmentDetailDialog({ appointmentId, onOpenChange }: { appoi
                 </Button>
               </div>
             )}
+
+            <TeleconsultationSection appointment={appointment} />
 
             <div className="flex flex-col gap-2 rounded-md border border-border p-3">
               <p className="text-xs font-medium text-muted-foreground">Consulta</p>
@@ -595,6 +601,69 @@ function LabOrderTestRow({
           <input type="file" className="hidden" onChange={handleFileChange} />
         </label>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Módulo 12 — Teleconsulta
+// ---------------------------------------------------------------------------
+function TeleconsultationSection({ appointment }: { appointment: { id: number; status: string } }) {
+  const { data: session } = useTeleconsultationForAppointment(appointment.id);
+  const createSession = useCreateTeleconsultation();
+  const startSession = useStartTeleconsultation();
+  const endSession = useEndTeleconsultation();
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo completar la acción de teleconsulta");
+    }
+  };
+
+  if (appointment.status !== "scheduled" && appointment.status !== "confirmed" && !session) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+      <p className="text-xs font-medium text-muted-foreground">Teleconsulta</p>
+
+      {error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+      {!session && (appointment.status === "scheduled" || appointment.status === "confirmed") && (
+        <Button size="sm" variant="outline" className="w-fit" onClick={() => run(() => createSession.mutateAsync({ appointment_id: appointment.id }))}>
+          Crear sala de videollamada
+        </Button>
+      )}
+
+      {session && (
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-xs text-muted-foreground">
+            Estado: {session.status === "scheduled" ? "Sala creada" : session.status === "active" ? "En curso" : session.status === "ended" ? "Finalizada" : "Cancelada"}
+          </span>
+          {session.status !== "ended" && (
+            <a href={session.join_url} target="_blank" rel="noreferrer" className="text-primary underline">
+              Abrir sala
+            </a>
+          )}
+          <div className="flex gap-2">
+            {session.status === "scheduled" && (
+              <Button size="sm" onClick={() => run(() => startSession.mutateAsync(session.id))}>
+                Iniciar
+              </Button>
+            )}
+            {(session.status === "scheduled" || session.status === "active") && (
+              <Button size="sm" variant="destructive" onClick={() => run(() => endSession.mutateAsync(session.id))}>
+                Finalizar
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

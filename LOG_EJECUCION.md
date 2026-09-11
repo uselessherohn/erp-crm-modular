@@ -940,6 +940,53 @@ Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
 
 ---
 
+## MÓDULO 12 — `medical`, teleconsulta — Fases 1-4 completas
+
+Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
+
+- `TeleconsultationSession` vinculada directamente a una `Appointment` — no a una `Consultation`
+  como Recetas/Laboratorio, porque la spec dice explícitamente "vinculada a una cita de Agenda".
+  Esto significa que la sección de Teleconsulta en el frontend aparece apenas se agenda/confirma
+  la cita, sin esperar a que exista una consulta registrada — a diferencia de Recetas y
+  Laboratorio, que sí dependen de una consulta.
+- **La spec de este módulo es inusualmente prescriptiva**: exige explícitamente integración con
+  un proveedor externo real (menciona Twilio/Daily) y prohíbe implementar WebRTC propio salvo que
+  se pida explícitamente (DED-37). El sandbox de este proyecto no tiene salida de red hacia
+  ningún proveedor de videollamada — mismo tipo de limitación ya documentada con
+  `EmailSender`/`AttachmentService`. Se construyó `TeleconsultationProvider` (interfaz abstracta,
+  `create_room`/`end_room`) con `DevStubTeleconsultationProvider` (genera una URL de sala local
+  determinística, `https://teleconsulta.local/dev-room/...`, sin llamar a ningún proveedor real).
+  Producción inyecta un cliente real detrás de la misma interfaz — el resto del módulo no cambia.
+- Una sola sesión `scheduled`/`active` por cita a la vez (DED-38) — se evaluó un índice único
+  parcial y se descartó de entrada por el mismo motivo ya documentado en DED-25 (Consulta, módulo
+  9): no es diferible en Postgres. El invariante se garantiza con el chequeo dentro de la misma
+  transacción de `create()`, mismo patrón que ya funcionó bien para Consulta.
+- Sin grabación/almacenamiento de video (DED-39) — se guarda solo metadata de la sesión
+  (horarios, estado, URL de sala). La spec pide "sala de videollamada", no grabación, y grabar
+  consultas médicas trae implicaciones regulatorias de consentimiento que ningún AMB de este
+  proyecto resuelve todavía — mejor no asumirlo que construir algo que después haya que revertir.
+- Migración con RLS+grants, mismo patrón. `tests/test_medical_module.py` extendido con 6 tests
+  nuevos (31/31 en el archivo, 92/92 en el backend completo): generación de URL de sala real, uso
+  de un proveedor inyectado (doble de prueba — nunca se ejercitó el stub real en el test, que es
+  el punto: la interfaz es sustituible), una sola sesión activa por cita, no se puede crear sobre
+  una cita cancelada, ciclo de vida completo iniciar/finalizar con verificación de que el
+  proveedor inyectado efectivamente recibe la llamada de cierre, "última sesión por cita" cuando
+  hay más de una a lo largo del tiempo. **Los 6 pasaron al primer intento.**
+- Contrato re-congelado a 101 rutas (96+5). El parche puntual de `z.record()` para Zod v4 se
+  volvió a aplicar (cuarta vez).
+- Frontend: sección "Teleconsulta" en `AppointmentDetailDialog.tsx` — crear sala, abrir enlace en
+  pestaña nueva, iniciar, finalizar. `MedicalPage.integration.test.tsx` extendido con el flujo
+  completo (crear sala → verificar el enlace generado → iniciar → finalizar), con verificación
+  real contra el backend de que `started_at`/`ended_at` quedaron poblados. Se reordenó la
+  resolución de `appointment`/`patientId` en el test (ahora se resuelven justo después de
+  confirmar la cita, no al final) porque el flujo de Teleconsulta que se insertó necesita el id
+  real de la cita antes que el resto del test.
+- `npx tsc --noEmit` y `npm run build`: limpios. `pytest tests/` final desde una base recreada de
+  cero (15 migraciones): **92/92**.
+- **Módulo 12 (medical — teleconsulta) cerrado — Fases 1-4 completas.**
+
+---
+
 ## Limitaciones de red del sandbox, documentadas explícitamente durante el proyecto
 - `ui.shadcn.com` no disponible → componentes UI escritos a mano sobre Radix.
 - `cdn.playwright.dev` no disponible → Vitest+jsdom como sustituto de E2E real en navegador
@@ -948,3 +995,6 @@ Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
   `EmailSender` de desarrollo que registra en vez de entregar (DED-27).
 - Sin acceso a un proveedor de object storage real → `medical` — laboratorio (módulo 11) usa
   `AttachmentService` con almacenamiento en disco local (`attachment_storage_root`).
+- Sin salida de red hacia proveedores de videollamada (Twilio/Daily/etc.) → `medical` —
+  teleconsulta (módulo 12) usa `DevStubTeleconsultationProvider`, que genera una URL de sala
+  local en vez de una sala real (DED-37).

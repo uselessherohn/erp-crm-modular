@@ -10,9 +10,9 @@ lo hecho, fase por fase).
 
 ## Estado actual del proyecto
 
-**12 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
+**13 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
 contrato congelado, frontend, tests de integración reales) — **el
-paquete Administrativo está completo, Médico tiene tres módulos, y el
+paquete Administrativo está completo, Médico tiene cuatro módulos, y el
 primer módulo Transversal (notifications) también**:
 
 | # | Módulo | Paquete | Estado |
@@ -28,9 +28,10 @@ primer módulo Transversal (notifications) también**:
 | 9 | medical (Expediente Clínico, Agenda, Consulta) | Médico | ✓ Completo |
 | 10 | medical — recetas | Médico | ✓ Completo |
 | 11 | medical — laboratorio | Médico | ✓ Completo |
+| 12 | medical — teleconsulta | Médico | ✓ Completo |
 | 26 | notifications | Transversal | ✓ Completo |
 
-Los módulos 12-15 de Médico (teleconsulta, facturación médica básica,
+Los módulos 13-15 de Médico (facturación médica básica,
 portal/mensajería, reserva pública de citas), los paquetes Farmacéutico
 y Web, y los módulos transversales restantes (reports, audit completo),
 todavía no se empezaron.
@@ -64,7 +65,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 86/86 esperados
+pytest tests/ -q   # 92/92 esperados
 
 # Frontend
 cd frontend
@@ -85,7 +86,7 @@ npx vitest run       # suite de integración real contra el backend de arriba
   `LOG_EJECUCION.md`. Es la bitácora cronológica completa, módulo por
   módulo, fase por fase.
 - **¿Quieres el contrato de API vigente?** → `contracts/openapi.json`
-  (96 rutas al momento de este corte).
+  (101 rutas al momento de este corte).
 - **¿Quieres la tabla de módulos y dependencias del sistema completo?** →
   `modulos_erp_crm_v10_4.json` (26 módulos totales planeados).
 

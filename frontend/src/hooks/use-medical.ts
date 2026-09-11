@@ -264,3 +264,56 @@ export function useUploadLabOrderTestAttachment() {
 export function downloadMedicalAttachment(attachmentId: number, filename: string) {
   return apiDownloadFile(`/medical/attachments/${attachmentId}/download`, filename);
 }
+
+// ---------------------------------------------------------------------------------
+// Módulo 12 — Teleconsulta
+// ---------------------------------------------------------------------------
+type TeleconsultationSessionRead = components["schemas"]["TeleconsultationSessionRead"];
+type TeleconsultationSessionCreate = z.infer<typeof schemas.TeleconsultationSessionCreate>;
+
+export function useTeleconsultationForAppointment(appointmentId: number | null) {
+  return useQuery({
+    queryKey: ["medical", "appointments", "teleconsultation", appointmentId],
+    queryFn: () =>
+      apiRequest<TeleconsultationSessionRead | null>(`/medical/appointments/${appointmentId}/teleconsultation`, {
+        responseSchema: schemas.TeleconsultationSessionRead.nullable(),
+      }),
+    enabled: appointmentId !== null,
+  });
+}
+
+export function useCreateTeleconsultation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: TeleconsultationSessionCreate) =>
+      apiRequest<TeleconsultationSessionRead>("/medical/teleconsultations", {
+        method: "POST", body: payload, responseSchema: schemas.TeleconsultationSessionRead,
+      }),
+    onSuccess: (session) =>
+      qc.invalidateQueries({ queryKey: ["medical", "appointments", "teleconsultation", session.appointment_id] }),
+  });
+}
+
+export function useStartTeleconsultation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: number) =>
+      apiRequest<TeleconsultationSessionRead>(`/medical/teleconsultations/${sessionId}/start`, {
+        method: "POST", responseSchema: schemas.TeleconsultationSessionRead,
+      }),
+    onSuccess: (session) =>
+      qc.invalidateQueries({ queryKey: ["medical", "appointments", "teleconsultation", session.appointment_id] }),
+  });
+}
+
+export function useEndTeleconsultation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: number) =>
+      apiRequest<TeleconsultationSessionRead>(`/medical/teleconsultations/${sessionId}/end`, {
+        method: "POST", responseSchema: schemas.TeleconsultationSessionRead,
+      }),
+    onSuccess: (session) =>
+      qc.invalidateQueries({ queryKey: ["medical", "appointments", "teleconsultation", session.appointment_id] }),
+  });
+}

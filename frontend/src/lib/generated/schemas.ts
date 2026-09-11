@@ -1052,6 +1052,32 @@ const AttachmentRead = z
     created_at: z.string().datetime({ offset: true }),
   })
   .passthrough();
+const TeleconsultationSessionCreate = z
+  .object({ appointment_id: z.number().int() })
+  .passthrough();
+const TeleconsultationStatusEnum = z.enum([
+  "scheduled",
+  "active",
+  "ended",
+  "cancelled",
+]);
+const TeleconsultationSessionRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    appointment_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    provider: z.string(),
+    room_external_id: z.string(),
+    join_url: z.string(),
+    status: TeleconsultationStatusEnum,
+    started_at: z.union([z.string(), z.null()]),
+    ended_at: z.union([z.string(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+    created_by: z.number().int(),
+  })
+  .passthrough();
 const NotificationTemplateCreate = z
   .object({
     code: z.string().min(1).max(100),
@@ -1226,6 +1252,9 @@ export const schemas = {
   LabOrderTestResult,
   Body_upload_lab_order_test_attachment_medical_lab_order_tests__lab_order_test_id__attachments_post,
   AttachmentRead,
+  TeleconsultationSessionCreate,
+  TeleconsultationStatusEnum,
+  TeleconsultationSessionRead,
   NotificationTemplateCreate,
   NotificationTemplateRead,
   NotificationTemplateUpdate,

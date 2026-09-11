@@ -247,3 +247,34 @@ class AttachmentRead(BaseModel):
     mime_type: str
     uploaded_by: int
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 12 — Teleconsulta
+# ---------------------------------------------------------------------------
+class TeleconsultationStatusEnum(str, Enum):
+    scheduled = "scheduled"
+    active = "active"
+    ended = "ended"
+    cancelled = "cancelled"
+
+
+class TeleconsultationSessionCreate(BaseModel):
+    appointment_id: int
+
+
+class TeleconsultationSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    appointment_id: int
+    patient_contact_id: int
+    professional_user_id: int
+    provider: str
+    room_external_id: str
+    join_url: str
+    status: TeleconsultationStatusEnum
+    started_at: datetime | None
+    ended_at: datetime | None
+    created_at: datetime
+    created_by: int

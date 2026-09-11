@@ -47,7 +47,7 @@ es transparente a nivel de API).
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
-- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (—), facturación médica básica (—), portal/mensajería (—), reserva pública de citas (—)
+- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (—), portal/mensajería (—), reserva pública de citas (—)
 - Farmacéutico: (—) todos
 - Web: (—) todos
 - Transversal: reports (—), audit completo (—), notifications (✓ Completo — Fases 1-4 completas)
@@ -648,6 +648,46 @@ spec 7.1) — **Fases 1-4 completas**
   con el flujo completo (ordenar → cargar resultado crítico → verificar
   contra el backend).
 
+### `medical` — teleconsulta (módulo 12) — ✓ COMPLETO
+- **Rutas nuevas: 5** (101 rutas totales, 96 previas + 5):
+  `POST /medical/teleconsultations`, `GET /medical/teleconsultations/{id}`,
+  `GET /medical/appointments/{appointment_id}/teleconsultation`,
+  `POST /medical/teleconsultations/{id}/start`,
+  `POST /medical/teleconsultations/{id}/end`.
+- `TeleconsultationSession` vinculada directamente a una `Appointment`
+  (no a una `Consultation`, a diferencia de Recetas/Laboratorio) — la
+  spec dice explícitamente "vinculada a una cita de Agenda". La sección
+  del frontend aparece independiente de si ya existe una consulta.
+- **La spec exige integración con proveedor externo real (Twilio/Daily)
+  y prohíbe explícitamente implementar WebRTC propio** salvo pedido
+  explícito (DED-37) — el sandbox no tiene salida de red hacia ningún
+  proveedor de videollamada. Interfaz real `TeleconsultationProvider`
+  (`create_room`/`end_room`) con implementación de desarrollo
+  (`DevStubTeleconsultationProvider`) que genera una URL de sala local
+  determinística sin llamar a ningún proveedor — producción inyecta un
+  cliente real detrás de la misma interfaz, el resto del módulo no
+  cambia. Mismo patrón que `EmailSender` (notifications) y
+  `AttachmentService` (medical — laboratorio).
+- Una sola sesión activa (`scheduled`/`active`) por cita a la vez — sin
+  índice único parcial (mismo motivo ya documentado en DED-25: no es
+  diferible en Postgres), garantizado con el chequeo dentro de la misma
+  transacción de creación.
+- Sin grabación/almacenamiento de video (DED-39) — la spec pide "sala de
+  videollamada", no grabación, y grabar consultas médicas tiene
+  implicaciones regulatorias de consentimiento sin resolver en ningún
+  AMB de este proyecto. Solo se guarda metadata de la sesión.
+- 6 tests backend nuevos (92/92 total): generación de URL de sala, uso de
+  un proveedor inyectado (doble de prueba, no el real), una sola sesión
+  activa por cita, no se puede crear sobre una cita cancelada, ciclo de
+  vida completo iniciar/finalizar con verificación de que el proveedor
+  inyectado recibe la llamada de cierre, "última sesión por cita" cuando
+  hay más de una a lo largo del tiempo. **Todos al primer intento.**
+- Frontend: sección "Teleconsulta" en `AppointmentDetailDialog` (crear
+  sala, abrir enlace, iniciar, finalizar) — visible ya con la cita sola,
+  sin esperar a que exista una consulta. `MedicalPage.integration.test.tsx`
+  extendido con el flujo completo (crear → iniciar → finalizar,
+  verificado contra el backend en cada transición).
+
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
   producto. Datos de prueba truncados al cerrar cada fase.)
@@ -696,8 +736,24 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-34 | #11 medical (laboratorio) | DEDUCIBLE | Cabecera + líneas (`LabOrderTest`) — mismo criterio que Recetas (DED-31), una orden casi siempre pide más de una prueba. | Documentado, no requiere confirmación |
 | DED-35 | #11 medical (laboratorio) | DEDUCIBLE | Orden y resultado en la misma fila (`LabOrderTest`), sin tabla `LabResult` separada — el resultado completa campos que ya existen en la línea de la orden. | Documentado, no requiere confirmación |
 | DED-36 | #11 medical (laboratorio) | DEDUCIBLE | Marcado de valor crítico explícito (checkbox), no inferido comparando contra el rango de referencia — formatos heterogéneos sin unidad normalizada, sin catálogo de pruebas. | Documentado, no requiere confirmación — TODO si se necesita cálculo automático con un catálogo de pruebas |
+| DED-37 | #12 medical (teleconsulta) | DEDUCIBLE | Interfaz real `TeleconsultationProvider` con implementación de desarrollo (URL de sala local) — spec exige proveedor externo real (Twilio/Daily) y prohíbe WebRTC propio; sin salida de red en el sandbox hacia esos proveedores. | Documentado, no requiere confirmación — TODO de despliegue: credenciales de un proveedor real |
+| DED-38 | #12 medical (teleconsulta) | DEDUCIBLE | Una sola sesión activa por cita, garantizada por chequeo transaccional (no índice único parcial, mismo motivo que DED-25). | Documentado, no requiere confirmación |
+| DED-39 | #12 medical (teleconsulta) | DEDUCIBLE | Sin grabación/almacenamiento de video — la spec pide sala de videollamada, no grabación; implicaciones regulatorias de consentimiento sin resolver. | Documentado, no requiere confirmación |
 
 ## 5. Resumen rodante (solo los últimos 3 módulos cerrados)
+- Módulo 12 (medical — teleconsulta) — **Fases 1-4 completas.**
+  `TeleconsultationSession` vinculada directamente a la `Appointment`
+  (no a la `Consultation`, spec explícita: "vinculada a una cita de
+  Agenda"). Interfaz real `TeleconsultationProvider` (DED-37) con
+  implementación de desarrollo — la spec exige proveedor externo real
+  (Twilio/Daily) y prohíbe WebRTC propio, sin salida de red en el
+  sandbox hacia esos proveedores. Una sola sesión activa por cita
+  (DED-38, chequeo transaccional, no índice único parcial — mismo
+  motivo que DED-25). Sin grabación de video (DED-39). Contrato
+  re-congelado: 101 rutas (96+5). 6 tests backend nuevos (92/92 total)
+  — **todos al primer intento**. Frontend: sección "Teleconsulta" en
+  `AppointmentDetailDialog`, visible ya con solo la cita creada (a
+  diferencia de Recetas/Laboratorio, que esperan a que exista consulta).
 - Módulo 11 (medical — laboratorio) — **Fases 1-4 completas.** Cabecera
   (`LabOrder`) + líneas (`LabOrderTest`, DED-34), orden/resultado en la
   misma fila (DED-35), orden pasa a `completed` automáticamente cuando
@@ -851,11 +907,11 @@ spec 7.1) — **Fases 1-4 completas**
   backend (modelos, `pgcrypto`, `EXCLUDE USING gist`, servicios, routers,
   80 rutas, 15 tests backend) + frontend (`MedicalPage` + 2 diálogos,
   test de integración con verificación RBAC real).
-- TODO-24([extendido], módulos 12-15 medical): teleconsulta, facturación
-  médica básica, portal/mensajería paciente-médico, reserva pública de
-  citas — módulos separados en la tabla, no construidos todavía (regla 1
-  del Mensaje 0: no adelantar módulos futuros). Módulo 11 (laboratorio)
-  se resolvió en este cierre — ver TODO-30. Módulo 15 (reserva pública)
+- TODO-24([extendido], módulos 13-15 medical): facturación médica
+  básica, portal/mensajería paciente-médico, reserva pública de citas —
+  módulos separados en la tabla, no construidos todavía (regla 1 del
+  Mensaje 0: no adelantar módulos futuros). Módulo 12 (teleconsulta) se
+  resolvió en este cierre — ver TODO-33. Módulo 15 (reserva pública)
   sigue dependiendo de `website` (módulo 22, tampoco construido).
 - TODO-25(notifications): **Resuelto en este cierre.** Fases 1-4
   completas: backend (86 rutas, 11 tests) + frontend (campana global +
@@ -887,6 +943,15 @@ spec 7.1) — **Fases 1-4 completas**
   usa disco local (`attachment_storage_root`) — reemplazar por un backend
   de object storage real (S3/GCS/etc.) cuando haya credenciales de un
   proveedor configurables, mismo criterio que TODO-27 (notifications).
+- TODO-33(medical — teleconsulta, módulo 12): **Resuelto en este
+  cierre.** Fases 1-4 completas: backend (101 rutas, 6 tests, interfaz
+  real de proveedor con stub de desarrollo) + frontend (sección
+  "Teleconsulta" en `AppointmentDetailDialog`).
+- TODO-34(medical — teleconsulta, despliegue): reemplazar
+  `DevStubTeleconsultationProvider` por un cliente real (Twilio/Daily)
+  cuando haya credenciales configurables — sin bloqueo técnico, la
+  interfaz ya está lista (DED-37), mismo criterio que TODO-27
+  (notifications) y TODO-32 (attachments).
 
 ## 7. Proyecto de migración (si aplica)
 - Estado: sin proyecto de migración contratado.

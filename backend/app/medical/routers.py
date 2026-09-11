@@ -35,6 +35,7 @@ from app.medical.services import (
     ConsultationService,
     LabOrderService,
     PrescriptionService,
+    TeleconsultationService,
     get_by_appointment,
     professional_has_treated,
 )
@@ -421,3 +422,70 @@ async def download_attachment(
         content=content, media_type=attachment.mime_type,
         headers={"Content-Disposition": f'attachment; filename="{attachment.filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 12 — Teleconsulta
+# ---------------------------------------------------------------------------------------------
+@router.post("/teleconsultations", response_model=schemas.TeleconsultationSessionRead, status_code=201)
+async def create_teleconsultation(
+    payload: schemas.TeleconsultationSessionCreate,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("medical:teleconsultation:create")),
+) -> schemas.TeleconsultationSessionRead:
+    session = await TeleconsultationService.create(db, company_id=company_id, payload=payload, created_by=actor.id)
+    return schemas.TeleconsultationSessionRead.model_validate(session)
+
+
+@router.get("/teleconsultations/{session_id}", response_model=schemas.TeleconsultationSessionRead)
+async def get_teleconsultation(
+    session_id: int,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(get_current_user),
+) -> schemas.TeleconsultationSessionRead:
+    session = await TeleconsultationService.get(db, company_id=company_id, session_id=session_id)
+    await _require_clinical_read(
+        db, actor=actor, patient_contact_id=session.patient_contact_id,
+        all_permission="medical:teleconsultation:read-all", own_permission="medical:teleconsultation:read-own-patients",
+    )
+    return schemas.TeleconsultationSessionRead.model_validate(session)
+
+
+@router.get("/appointments/{appointment_id}/teleconsultation", response_model=schemas.TeleconsultationSessionRead | None)
+async def get_teleconsultation_for_appointment(
+    appointment_id: int,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(get_current_user),
+) -> schemas.TeleconsultationSessionRead | None:
+    appointment = await AppointmentService.get(db, company_id=company_id, appointment_id=appointment_id)
+    await _require_clinical_read(
+        db, actor=actor, patient_contact_id=appointment.patient_contact_id,
+        all_permission="medical:teleconsultation:read-all", own_permission="medical:teleconsultation:read-own-patients",
+    )
+    session = await TeleconsultationService.get_by_appointment(db, company_id=company_id, appointment_id=appointment_id)
+    return schemas.TeleconsultationSessionRead.model_validate(session) if session else None
+
+
+@router.post("/teleconsultations/{session_id}/start", response_model=schemas.TeleconsultationSessionRead)
+async def start_teleconsultation(
+    session_id: int,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    _actor: User = Depends(require_permission("medical:teleconsultation:create")),
+) -> schemas.TeleconsultationSessionRead:
+    session = await TeleconsultationService.start(db, company_id=company_id, session_id=session_id)
+    return schemas.TeleconsultationSessionRead.model_validate(session)
+
+
+@router.post("/teleconsultations/{session_id}/end", response_model=schemas.TeleconsultationSessionRead)
+async def end_teleconsultation(
+    session_id: int,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    _actor: User = Depends(require_permission("medical:teleconsultation:create")),
+) -> schemas.TeleconsultationSessionRead:
+    session = await TeleconsultationService.end(db, company_id=company_id, session_id=session_id)
+    return schemas.TeleconsultationSessionRead.model_validate(session)

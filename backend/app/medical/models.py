@@ -375,3 +375,69 @@ class LabOrderTest(Base):
     __table_args__ = (
         CheckConstraint(f"status IN {LAB_ORDER_TEST_STATUSES}", name="ck_lab_order_tests_status"),
     )
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 12 — medical: teleconsulta (spec 8.2, "Teleconsulta [extendido]")
+#
+# DECISIONES DEDUCIBLE/AMBIGUO de este módulo:
+#
+# - DED-37: la spec exige explícitamente integración con un proveedor
+#   externo real (Twilio/Daily) y prohíbe implementar WebRTC propio salvo
+#   pedido explícito — este sandbox no tiene salida de red hacia ningún
+#   proveedor de videollamada (mismo tipo de limitación que
+#   `EmailSender`/`AttachmentService`). Se implementa una interfaz real
+#   (`TeleconsultationProvider`) con una implementación de desarrollo
+#   (`DevStubTeleconsultationProvider`) que genera una URL de sala local
+#   determinística sin llamar a ningún proveedor real — producción
+#   reemplaza esta clase por un cliente real de Twilio/Daily inyectado,
+#   el resto del módulo no cambia. NO se implementó WebRTC propio, tal
+#   como la spec lo prohíbe salvo pedido explícito.
+# - DED-38: `TeleconsultationSession` vinculada 1:1 (mientras esté vigente)
+#   a una `Appointment` — igual criterio que `Consultation` en el módulo 9
+#   (índice único parcial descartado por el mismo motivo ya documentado
+#   en DED-25: no es diferible en Postgres; el invariante se garantiza
+#   con el chequeo de "¿ya existe sesión activa para esta cita?" dentro
+#   de la transacción de creación).
+# - DED-39: sin grabación/almacenamiento de video — la spec no lo pide
+#   ("sala de videollamada", no "grabación de videollamada") y grabar
+#   consultas médicas tiene implicaciones regulatorias de consentimiento
+#   que no están definidas en ningún AMB de este proyecto. Se guarda
+#   únicamente metadata de la sesión (horarios, estado, URL de sala).
+# ---------------------------------------------------------------------------------
+class TeleconsultationStatusEnum(str, enum.Enum):
+    scheduled = "scheduled"
+    active = "active"
+    ended = "ended"
+    cancelled = "cancelled"
+
+
+TELECONSULTATION_STATUSES = tuple(s.value for s in TeleconsultationStatusEnum)
+
+
+class TeleconsultationSession(Base):
+    """Teleconsulta [extendido] — sala de videollamada vinculada a una
+    cita. Ver DED-37/38/39 arriba."""
+
+    __tablename__ = "teleconsultation_sessions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+
+    appointment_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("appointments.id"), nullable=False, index=True)
+    patient_contact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=False, index=True)
+    professional_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    room_external_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    join_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="scheduled")
+
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(f"status IN {TELECONSULTATION_STATUSES}", name="ck_teleconsultation_sessions_status"),
+    )
