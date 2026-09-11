@@ -47,7 +47,38 @@ describe("MedicalPage — flujo real de medical contra backend en 127.0.0.1:8000
     setTokens(adminTokens.access_token, adminTokens.refresh_token);
 
     patientName = `Paciente Medical ${Date.now()}`;
-    await apiRequest("/contacts", { method: "POST", body: { name: patientName, is_patient: true } });
+    // is_customer=true además de is_patient=true: la compañía de prueba
+    // compartida ("El Roble") ya tiene el paquete 'administrative' activo
+    // (bootstrap_admin.py), así que Facturación Médica Básica toma el
+    // camino real de accounting_invoice (DED-42) — y ese motor exige el
+    // flag is_customer en el contacto, igual que cualquier otra factura.
+    await apiRequest("/contacts", { method: "POST", body: { name: patientName, is_patient: true, is_customer: true } });
+
+    // Plan de cuentas + mapeo mínimo para poder contabilizar una factura
+    // de venta — no hay ningún seed automático en el proyecto (DED-10:
+    // nunca se hardcodea una cuenta), así que se crea acá, con códigos
+    // únicos por corrida para no chocar con una ejecución previa contra
+    // la misma base persistente.
+    const acctSuffix = Date.now().toString().slice(-8);
+    for (const [role, code, name] of [
+      ["receivable", "REC", "Cuentas por Cobrar"],
+      ["income", "INC", "Ingresos"],
+      ["tax", "TAX", "Impuestos por Pagar"],
+    ] as const) {
+      const account = await apiRequest<{ id: number }>("/accounting/accounts", {
+        method: "POST", body: { code: `M${code}${acctSuffix}`, name, account_type: role },
+      });
+      try {
+        await apiRequest("/accounting/document-account-mappings", {
+          method: "POST", body: { document_type: "sales_invoice", role, account_id: account.id },
+        });
+      } catch (err) {
+        // Ya existe un mapeo para (sales_invoice, role) de una corrida
+        // previa contra esta misma compañía persistente — el mapeo
+        // existente sirve igual, no hace falta que apunte a esta cuenta.
+        if (!(err instanceof ApiError) || err.status !== 409) throw err;
+      }
+    }
   });
 
   it("agenda una cita, la confirma, y registra una consulta desde la UI", async () => {
@@ -134,7 +165,7 @@ describe("MedicalPage — flujo real de medical contra backend en 127.0.0.1:8000
     // reposo pero descifrado en la respuesta de la API (comportamiento
     // esperado, no un leak — ver DED-24).
 
-    const consultation = await apiRequest<{ diagnosis_text: string | null }>(
+    const consultation = await apiRequest<{ id: number; diagnosis_text: string | null }>(
       `/medical/appointments/${appointment!.id}/consultation`
     );
     expect(consultation.diagnosis_text).toBe(diagnosisText);
@@ -193,6 +224,30 @@ describe("MedicalPage — flujo real de medical contra backend en 127.0.0.1:8000
     const glucoseTest = labOrder!.tests.find((t) => t.test_name === "Glucosa en ayunas")!;
     expect(glucoseTest.is_critical).toBe(true);
     expect(glucoseTest.status).toBe("resulted");
+
+    // Módulo 13 — Facturación Médica Básica: emitir un comprobante (sin
+    // el paquete 'administrative' activo en esta compañía de prueba, cae
+    // en modo "recibo simple", verificado real contra el backend) y
+    // anularlo.
+    await user.click(within(dialog).getByRole("button", { name: /^emitir comprobante$/i }));
+    await user.type(within(dialog).getByPlaceholderText(/monto/i), "450.00");
+    await user.click(within(dialog).getByRole("button", { name: /^emitir$/i }));
+
+    await waitFor(() => expect(within(dialog).getByText(/factura contabilizada/i)).toBeInTheDocument(), { timeout: 10000 });
+
+    const billing = await apiRequest<{ billing_mode: string; invoice_id: number | null; status: string }>(
+      `/medical/consultations/${consultation.id}/billing`
+    );
+    expect(billing.billing_mode).toBe("accounting_invoice");
+    expect(billing.invoice_id).toBeTruthy();
+    expect(billing.status).toBe("issued");
+
+    await user.type(within(dialog).getByPlaceholderText(/motivo de anulación/i), "Monto incorrecto en esta prueba");
+    await user.click(within(dialog).getByRole("button", { name: /^anular$/i }));
+    await waitFor(async () => {
+      const cancelledBilling = await apiRequest<{ status: string }>(`/medical/consultations/${consultation.id}/billing`);
+      expect(cancelledBilling.status).toBe("cancelled");
+    }, { timeout: 10000 });
 
     // RBAC clínico "own patients", verificado real: un usuario con
     // medical:consultation:read-own-patients (sin -all) que NUNCA atendió

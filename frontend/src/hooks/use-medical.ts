@@ -317,3 +317,45 @@ export function useEndTeleconsultation() {
       qc.invalidateQueries({ queryKey: ["medical", "appointments", "teleconsultation", session.appointment_id] }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Módulo 13 — Facturación Médica Básica
+// ---------------------------------------------------------------------------
+type MedicalBillingRecordRead = components["schemas"]["MedicalBillingRecordRead"];
+type MedicalBillingCreate = z.infer<typeof schemas.MedicalBillingCreate>;
+type MedicalBillingCancel = z.infer<typeof schemas.MedicalBillingCancel>;
+
+export function useBillingForConsultation(consultationId: number | null) {
+  return useQuery({
+    queryKey: ["medical", "consultations", consultationId, "billing"],
+    queryFn: () =>
+      apiRequest<MedicalBillingRecordRead | null>(`/medical/consultations/${consultationId}/billing`, {
+        responseSchema: schemas.MedicalBillingRecordRead.nullable(),
+      }),
+    enabled: consultationId !== null,
+  });
+}
+
+export function useCreateMedicalBilling() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: MedicalBillingCreate) =>
+      apiRequest<MedicalBillingRecordRead>("/medical/billing", {
+        method: "POST", body: payload, responseSchema: schemas.MedicalBillingRecordRead,
+      }),
+    onSuccess: (record) =>
+      qc.invalidateQueries({ queryKey: ["medical", "consultations", record.consultation_id, "billing"] }),
+  });
+}
+
+export function useCancelMedicalBilling() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ recordId, payload }: { recordId: number; payload: MedicalBillingCancel }) =>
+      apiRequest<MedicalBillingRecordRead>(`/medical/billing/${recordId}/cancel`, {
+        method: "POST", body: payload, responseSchema: schemas.MedicalBillingRecordRead,
+      }),
+    onSuccess: (record) =>
+      qc.invalidateQueries({ queryKey: ["medical", "consultations", record.consultation_id, "billing"] }),
+  });
+}

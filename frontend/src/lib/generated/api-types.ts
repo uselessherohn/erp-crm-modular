@@ -1627,6 +1627,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/medical/billing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Medical Billing */
+        post: operations["create_medical_billing_medical_billing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/consultations/{consultation_id}/billing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Medical Billing For Consultation */
+        get: operations["get_medical_billing_for_consultation_medical_consultations__consultation_id__billing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/billing/{record_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Medical Billing */
+        post: operations["cancel_medical_billing_medical_billing__record_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications/templates": {
         parameters: {
             query?: never;
@@ -2658,6 +2709,79 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** MedicalBillingCancel */
+        MedicalBillingCancel: {
+            /** Cancel Reason */
+            cancel_reason: string;
+        };
+        /** MedicalBillingCreate */
+        MedicalBillingCreate: {
+            /** Consultation Id */
+            consultation_id: number;
+            /** Amount */
+            amount: number | string;
+            /**
+             * Currency Code
+             * @default HNL
+             */
+            currency_code: string;
+            /**
+             * Issue Date
+             * Format: date
+             */
+            issue_date: string;
+            /** Tax Rate Id */
+            tax_rate_id?: number | null;
+        };
+        /**
+         * MedicalBillingModeEnum
+         * @enum {string}
+         */
+        MedicalBillingModeEnum: "accounting_invoice" | "simple_receipt";
+        /** MedicalBillingRecordRead */
+        MedicalBillingRecordRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Consultation Id */
+            consultation_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            billing_mode: components["schemas"]["MedicalBillingModeEnum"];
+            status: components["schemas"]["MedicalBillingStatusEnum"];
+            /** Amount */
+            amount: string;
+            /** Currency Code */
+            currency_code: string;
+            /**
+             * Issue Date
+             * Format: date
+             */
+            issue_date: string;
+            /** Invoice Id */
+            invoice_id: number | null;
+            /** Receipt Number */
+            receipt_number: string | null;
+            /** Cancelled At */
+            cancelled_at: string | null;
+            /** Cancel Reason */
+            cancel_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: number;
+        };
+        /**
+         * MedicalBillingStatusEnum
+         * @enum {string}
+         */
+        MedicalBillingStatusEnum: "issued" | "cancelled";
         /**
          * MovementTypeEnum
          * @enum {string}
@@ -7683,6 +7807,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeleconsultationSessionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_medical_billing_medical_billing_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MedicalBillingCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MedicalBillingRecordRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_medical_billing_for_consultation_medical_consultations__consultation_id__billing_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                consultation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MedicalBillingRecordRead"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_medical_billing_medical_billing__record_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MedicalBillingCancel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MedicalBillingRecordRead"];
                 };
             };
             /** @description Validation Error */

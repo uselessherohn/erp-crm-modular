@@ -10,9 +10,9 @@ lo hecho, fase por fase).
 
 ## Estado actual del proyecto
 
-**13 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
+**14 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
 contrato congelado, frontend, tests de integración reales) — **el
-paquete Administrativo está completo, Médico tiene cuatro módulos, y el
+paquete Administrativo está completo, Médico tiene cinco módulos, y el
 primer módulo Transversal (notifications) también**:
 
 | # | Módulo | Paquete | Estado |
@@ -29,12 +29,13 @@ primer módulo Transversal (notifications) también**:
 | 10 | medical — recetas | Médico | ✓ Completo |
 | 11 | medical — laboratorio | Médico | ✓ Completo |
 | 12 | medical — teleconsulta | Médico | ✓ Completo |
+| 13 | medical — facturación médica básica | Médico | ✓ Completo |
 | 26 | notifications | Transversal | ✓ Completo |
 
-Los módulos 13-15 de Médico (facturación médica básica,
-portal/mensajería, reserva pública de citas), los paquetes Farmacéutico
-y Web, y los módulos transversales restantes (reports, audit completo),
-todavía no se empezaron.
+Los módulos 14-15 de Médico (portal/mensajería paciente-médico, reserva
+pública de citas), los paquetes Farmacéutico y Web, y los módulos
+transversales restantes (reports, audit completo), todavía no se
+empezaron.
 
 ## Marca e instalación como PWA
 
@@ -65,7 +66,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 92/92 esperados
+pytest tests/ -q   # 97/97 esperados
 
 # Frontend
 cd frontend
@@ -86,7 +87,7 @@ npx vitest run       # suite de integración real contra el backend de arriba
   `LOG_EJECUCION.md`. Es la bitácora cronológica completa, módulo por
   módulo, fase por fase.
 - **¿Quieres el contrato de API vigente?** → `contracts/openapi.json`
-  (101 rutas al momento de este corte).
+  (104 rutas al momento de este corte).
 - **¿Quieres la tabla de módulos y dependencias del sistema completo?** →
   `modulos_erp_crm_v10_4.json` (26 módulos totales planeados).
 

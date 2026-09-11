@@ -17,6 +17,7 @@ lectura.
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -836,3 +837,124 @@ class TeleconsultationService:
         await db.commit()
         await db.refresh(session)
         return session
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 13 — Facturación Médica Básica. Ver DED-40/41/42 en models.py.
+# ---------------------------------------------------------------------------
+class MedicalBillingService:
+    @staticmethod
+    async def create(
+        db: AsyncSession, *, company_id: int, payload: schemas.MedicalBillingCreate, created_by: int
+    ) -> models.MedicalBillingRecord:
+        from app.core.dependencies import get_active_packages
+        from app.core.services import DocumentNumberingService
+
+        consultation = await ConsultationService.get(
+            db, company_id=company_id, consultation_id=payload.consultation_id, actor_user_id=created_by
+        )
+
+        existing = await db.execute(
+            select(models.MedicalBillingRecord.id).where(
+                models.MedicalBillingRecord.consultation_id == consultation.id,
+                models.MedicalBillingRecord.status == "issued",
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise ConflictError("Esta consulta ya tiene un comprobante de facturación vigente")
+
+        active_packages = await get_active_packages(company_id, db)
+
+        invoice_id = None
+        receipt_number = None
+
+        if "administrative" in active_packages:
+            # DED-40/42: 'administrative' activo -> se usa el motor de
+            # asientos real, no se duplica lógica de facturación acá.
+            from app.accounting import schemas as accounting_schemas
+            from app.accounting.services import InvoiceService
+
+            invoice = await InvoiceService.create_draft(
+                db, company_id=company_id,
+                payload=accounting_schemas.InvoiceCreate(
+                    direction=accounting_schemas.DirectionEnum.sale,
+                    contact_id=consultation.patient_contact_id,
+                    currency_code=payload.currency_code,
+                    issue_date=payload.issue_date,
+                    source_document_type="medical_consultation",
+                    source_document_id=consultation.id,
+                    lines=[accounting_schemas.InvoiceLineCreate(
+                        description="Consulta médica", quantity=Decimal("1"),
+                        unit_price=payload.amount, tax_rate_id=payload.tax_rate_id,
+                    )],
+                ),
+                created_by=created_by,
+            )
+            invoice = await InvoiceService.post(db, company_id=company_id, invoice_id=invoice.id, actor_id=created_by)
+            invoice_id = invoice.id
+            billing_mode = "accounting_invoice"
+        else:
+            receipt_number = await DocumentNumberingService.next_number(
+                db, company_id=company_id, doc_type="medical_receipt", prefix="REC",
+                year=payload.issue_date.year,
+            )
+            billing_mode = "simple_receipt"
+
+        record = models.MedicalBillingRecord(
+            company_id=company_id, consultation_id=consultation.id,
+            patient_contact_id=consultation.patient_contact_id, professional_user_id=consultation.professional_user_id,
+            billing_mode=billing_mode, amount=payload.amount, currency_code=payload.currency_code,
+            issue_date=payload.issue_date, invoice_id=invoice_id, receipt_number=receipt_number,
+            created_by=created_by,
+        )
+        db.add(record)
+        await db.flush()
+
+        await AuditService.log_event(
+            db, company_id=company_id, event="medical.billing.create", entity_type="medical_billing_record",
+            entity_id=record.id, user_id=created_by,
+        )
+        await db.commit()
+        await db.refresh(record)
+        return record
+
+    @staticmethod
+    async def get_for_consultation(
+        db: AsyncSession, *, company_id: int, consultation_id: int
+    ) -> models.MedicalBillingRecord | None:
+        result = await db.execute(
+            select(models.MedicalBillingRecord).where(
+                models.MedicalBillingRecord.company_id == company_id,
+                models.MedicalBillingRecord.consultation_id == consultation_id,
+            ).order_by(models.MedicalBillingRecord.created_at.desc())
+        )
+        return result.scalars().first()
+
+    @staticmethod
+    async def cancel(
+        db: AsyncSession, *, company_id: int, record_id: int, payload: schemas.MedicalBillingCancel, actor_id: int
+    ) -> models.MedicalBillingRecord:
+        result = await db.execute(
+            select(models.MedicalBillingRecord)
+            .where(models.MedicalBillingRecord.company_id == company_id, models.MedicalBillingRecord.id == record_id)
+            .with_for_update()
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            raise NotFoundError(f"Comprobante {record_id} no encontrado")
+        if record.status == "cancelled":
+            raise ConflictError("Este comprobante ya fue anulado")
+
+        from sqlalchemy import func as sa_func
+
+        record.status = "cancelled"
+        record.cancelled_at = sa_func.now()
+        record.cancel_reason = payload.cancel_reason
+
+        await AuditService.log_event(
+            db, company_id=company_id, event="medical.billing.cancel", entity_type="medical_billing_record",
+            entity_id=record.id, user_id=actor_id,
+        )
+        await db.commit()
+        await db.refresh(record)
+        return record

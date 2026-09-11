@@ -30,6 +30,7 @@ from app.medical.services import (
     ClinicalRecordService,
     ConsultationService,
     LabOrderService,
+    MedicalBillingService,
     PrescriptionService,
     TeleconsultationService,
     professional_has_treated,
@@ -83,7 +84,8 @@ def _appt_payload(patient_id, professional_id, start, end, reason="Consulta gene
     )
 
 
-from datetime import datetime, timedelta, timezone  # noqa: E402
+from datetime import date, datetime, timedelta, timezone  # noqa: E402
+from decimal import Decimal  # noqa: E402
 
 _BASE = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
 
@@ -874,3 +876,133 @@ async def test_teleconsultation_get_by_appointment_returns_latest(db, company, p
     found = await TeleconsultationService.get_by_appointment(db, company_id=company.id, appointment_id=appointment.id)
     assert found is not None
     assert found.id == session.id
+
+
+# ---------------------------------------------------------------------------
+# Módulo 13 — Facturación Médica Básica
+# ---------------------------------------------------------------------------
+async def _setup_sales_invoice_account_mappings(db, company):
+    """Fixture mínima real del motor de asientos — no existe ningún seed
+    automático de plan de cuentas en el proyecto (spec DED-10: nunca se
+    hardcodea una cuenta), así que se crea acá explícitamente, igual que
+    tendría que hacerlo cualquier cliente nuevo antes de facturar."""
+    from app.accounting import models as accounting_models
+
+    accounts = {}
+    for role, name in [("receivable", "Cuentas por Cobrar"), ("income", "Ingresos"), ("tax", "Impuestos por Pagar")]:
+        account = accounting_models.Account(
+            company_id=company.id, code=f"TEST-{role}", name=name, account_type=role,
+        )
+        db.add(account)
+        await db.flush()
+        accounts[role] = account
+        db.add(accounting_models.DocumentAccountMapping(
+            company_id=company.id, document_type="sales_invoice", role=role, account_id=account.id,
+        ))
+    await db.commit()
+    return accounts
+
+
+@pytest.mark.asyncio
+async def test_billing_simple_receipt_when_administrative_inactive(db, company, patient, professional):
+    consultation = await _issue_consultation(db, company, patient, professional)
+    record = await MedicalBillingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.MedicalBillingCreate(
+            consultation_id=consultation.id, amount=Decimal("500.00"), issue_date=date.today(),
+        ),
+        created_by=professional.id,
+    )
+    assert record.billing_mode == "simple_receipt"
+    assert record.receipt_number is not None
+    assert record.invoice_id is None
+    assert record.status == "issued"
+
+
+@pytest.mark.asyncio
+async def test_billing_creates_real_invoice_when_administrative_active(db, company, patient, professional):
+    db.add(core_models.CompanyPackage(company_id=company.id, package="administrative", status="active"))
+    await db.commit()
+    await _setup_sales_invoice_account_mappings(db, company)
+
+    # El paciente debe tener is_customer=true para poder facturarlo — el
+    # propio InvoiceService.create_draft ya lo exige (DED-42), no es una
+    # regla nueva de medical.
+    patient.is_customer = True
+    await db.commit()
+
+    consultation = await _issue_consultation(db, company, patient, professional)
+    record = await MedicalBillingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.MedicalBillingCreate(
+            consultation_id=consultation.id, amount=Decimal("750.00"), issue_date=date.today(),
+        ),
+        created_by=professional.id,
+    )
+    assert record.billing_mode == "accounting_invoice"
+    assert record.invoice_id is not None
+    assert record.receipt_number is None
+
+    from app.accounting.services import InvoiceService
+
+    invoice = await InvoiceService.get(db, company_id=company.id, invoice_id=record.invoice_id)
+    assert invoice.status == "posted"
+    assert invoice.total == Decimal("750.00")
+    assert invoice.journal_entry_id is not None
+
+
+@pytest.mark.asyncio
+async def test_billing_rejects_second_active_record_for_same_consultation(db, company, patient, professional):
+    consultation = await _issue_consultation(db, company, patient, professional)
+    await MedicalBillingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.MedicalBillingCreate(consultation_id=consultation.id, amount=Decimal("300"), issue_date=date.today()),
+        created_by=professional.id,
+    )
+    with pytest.raises(ConflictError):
+        await MedicalBillingService.create(
+            db, company_id=company.id,
+            payload=medical_schemas.MedicalBillingCreate(consultation_id=consultation.id, amount=Decimal("300"), issue_date=date.today()),
+            created_by=professional.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_billing_cancel_then_rebill_allowed(db, company, patient, professional):
+    consultation = await _issue_consultation(db, company, patient, professional)
+    record = await MedicalBillingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.MedicalBillingCreate(consultation_id=consultation.id, amount=Decimal("300"), issue_date=date.today()),
+        created_by=professional.id,
+    )
+    cancelled = await MedicalBillingService.cancel(
+        db, company_id=company.id, record_id=record.id,
+        payload=medical_schemas.MedicalBillingCancel(cancel_reason="Monto incorrecto"), actor_id=professional.id,
+    )
+    assert cancelled.status == "cancelled"
+
+    with pytest.raises(ConflictError):
+        await MedicalBillingService.cancel(
+            db, company_id=company.id, record_id=record.id,
+            payload=medical_schemas.MedicalBillingCancel(cancel_reason="Doble anulación"), actor_id=professional.id,
+        )
+
+    # Con el anterior anulado, sí se puede emitir un nuevo comprobante
+    # para la misma consulta (DED-30: consulta -> 0..N comprobantes en el
+    # tiempo, mismo criterio que recetas).
+    new_record = await MedicalBillingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.MedicalBillingCreate(consultation_id=consultation.id, amount=Decimal("300"), issue_date=date.today()),
+        created_by=professional.id,
+    )
+    assert new_record.id != record.id
+
+
+@pytest.mark.asyncio
+async def test_billing_requires_existing_consultation(db, company, professional):
+    with pytest.raises(NotFoundError):
+        await MedicalBillingService.create(
+            db, company_id=company.id,
+            payload=medical_schemas.MedicalBillingCreate(consultation_id=999999, amount=Decimal("100"), issue_date=date.today()),
+            created_by=professional.id,
+        )

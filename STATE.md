@@ -47,7 +47,7 @@ es transparente a nivel de API).
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
-- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (—), portal/mensajería (—), reserva pública de citas (—)
+- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (—), reserva pública de citas (—)
 - Farmacéutico: (—) todos
 - Web: (—) todos
 - Transversal: reports (—), audit completo (—), notifications (✓ Completo — Fases 1-4 completas)
@@ -688,6 +688,50 @@ spec 7.1) — **Fases 1-4 completas**
   extendido con el flujo completo (crear → iniciar → finalizar,
   verificado contra el backend en cada transición).
 
+### `medical` — facturación médica básica (módulo 13) — ✓ COMPLETO
+- **Rutas nuevas: 3** (104 rutas totales, 101 previas + 3):
+  `POST /medical/billing`, `GET /medical/consultations/{id}/billing`,
+  `POST /medical/billing/{id}/cancel`.
+- "Si `accounting` está activo" (spec) se interpreta como "el paquete
+  `administrative` está activo para la compañía" (DED-40) — no existe
+  activación granular por sub-módulo dentro de un paquete (spec 2.4).
+- Un solo `amount` por consulta, sin líneas de conceptos (DED-41) — la
+  spec dice "recibo/factura por consulta", no un desglose facturable.
+- Cuando `administrative` está activo, se reutiliza el motor de asientos
+  real de `accounting` (`InvoiceService.create_draft`+`.post()`, sección
+  7.1) con `source_document_type='medical_consultation'` — **sin
+  duplicar lógica de facturación dentro de `medical`** (DED-42). Esto
+  implica que el `Contact` del paciente debe tener `is_customer=true`
+  para poder facturarlo — regla general del ERP que `medical` no
+  desactiva ni asume en silencio; se propaga el mismo error que
+  cualquier otro intento de facturar a un contacto sin ese flag.
+- Cuando `administrative` NO está activo, genera un `MedicalBillingRecord`
+  en modo `simple_receipt` — numeración atómica real
+  (`DocumentNumberingService`, doc_type='medical_receipt') pero sin
+  asiento contable, declarado como TODO explícito (spec) si el cliente
+  activa Administrativo más tarde.
+- 5 tests backend nuevos (97/97 total) — **primer test del proyecto que
+  cruza `medical` con el motor de asientos real de `accounting`**:
+  comprobante simple cuando `administrative` inactivo, factura real
+  contabilizada cuando está activo (con Plan de Cuentas + mapeo mínimo
+  construidos en el propio test, ya que no hay ningún seed automático),
+  rechazo de un segundo comprobante activo para la misma consulta,
+  anular y volver a facturar permitido, consulta inexistente. **Todos
+  al primer intento.**
+- **Hallazgo real de Fase 3 (frontend)**: el primer intento del test de
+  integración asumía el camino `simple_receipt`, pero la compañía de
+  prueba compartida ya tiene `administrative` activo desde el bootstrap
+  — el camino real es `accounting_invoice`, que además exige
+  `is_customer=true` en el contacto (mismo comportamiento que cualquier
+  otra factura, no un bug). El test se ajustó para reflejar el
+  comportamiento real: crea Plan de Cuentas + mapeo mínimo y activa
+  `is_customer` en el paciente antes de facturar.
+- Frontend: sección "Facturación" en `AppointmentDetailDialog` — emitir
+  comprobante, anular con motivo. `MedicalPage.integration.test.tsx`
+  extendido con el flujo completo, verificando contra el backend que la
+  factura quedó realmente contabilizada (`invoice_id` presente, no solo
+  un estado visual).
+
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
   producto. Datos de prueba truncados al cerrar cada fase.)
@@ -739,8 +783,26 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-37 | #12 medical (teleconsulta) | DEDUCIBLE | Interfaz real `TeleconsultationProvider` con implementación de desarrollo (URL de sala local) — spec exige proveedor externo real (Twilio/Daily) y prohíbe WebRTC propio; sin salida de red en el sandbox hacia esos proveedores. | Documentado, no requiere confirmación — TODO de despliegue: credenciales de un proveedor real |
 | DED-38 | #12 medical (teleconsulta) | DEDUCIBLE | Una sola sesión activa por cita, garantizada por chequeo transaccional (no índice único parcial, mismo motivo que DED-25). | Documentado, no requiere confirmación |
 | DED-39 | #12 medical (teleconsulta) | DEDUCIBLE | Sin grabación/almacenamiento de video — la spec pide sala de videollamada, no grabación; implicaciones regulatorias de consentimiento sin resolver. | Documentado, no requiere confirmación |
+| DED-40 | #13 medical (facturación) | DEDUCIBLE | "accounting activo" = paquete `administrative` activo — no existe activación granular por sub-módulo dentro de un paquete. | Documentado, no requiere confirmación |
+| DED-41 | #13 medical (facturación) | DEDUCIBLE | Un solo `amount` por consulta, sin líneas de conceptos — la spec dice "recibo/factura por consulta", no un desglose facturable. | Documentado, no requiere confirmación — TODO si se necesita facturar conceptos por separado |
+| DED-42 | #13 medical (facturación) | DEDUCIBLE | Cuando `administrative` activo, se reutiliza el motor de asientos real de `accounting` (sin duplicar lógica) — el paciente debe tener `is_customer=true`, misma regla que cualquier factura. | Documentado, no requiere confirmación |
 
 ## 5. Resumen rodante (solo los últimos 3 módulos cerrados)
+- Módulo 13 (medical — facturación médica básica) — **Fases 1-4
+  completas.** "accounting activo" = paquete `administrative` activo
+  (DED-40, sin activación granular por sub-módulo). Un solo `amount` por
+  consulta (DED-41). Cuando `administrative` está activo, reutiliza el
+  motor de asientos real de `accounting` sin duplicar lógica (DED-42) —
+  **primer test del proyecto que cruza `medical` con el motor de
+  asientos real**, construyendo su propio Plan de Cuentas + mapeo mínimo
+  (sin seed automático en el proyecto). Cuando no está activo, emite un
+  comprobante simple con numeración atómica, sin asiento. Contrato
+  re-congelado: 104 rutas (101+3). 5 tests backend nuevos (97/97 total)
+  — todos al primer intento. **Hallazgo real de Fase 3**: el primer
+  intento del test de frontend asumía el camino `simple_receipt`, pero
+  la compañía de prueba compartida ya tenía `administrative` activo —
+  ajustado para reflejar el camino real (`accounting_invoice`, que exige
+  `is_customer=true` en el paciente, igual que cualquier factura).
 - Módulo 12 (medical — teleconsulta) — **Fases 1-4 completas.**
   `TeleconsultationSession` vinculada directamente a la `Appointment`
   (no a la `Consultation`, spec explícita: "vinculada a una cita de
@@ -907,12 +969,12 @@ spec 7.1) — **Fases 1-4 completas**
   backend (modelos, `pgcrypto`, `EXCLUDE USING gist`, servicios, routers,
   80 rutas, 15 tests backend) + frontend (`MedicalPage` + 2 diálogos,
   test de integración con verificación RBAC real).
-- TODO-24([extendido], módulos 13-15 medical): facturación médica
-  básica, portal/mensajería paciente-médico, reserva pública de citas —
-  módulos separados en la tabla, no construidos todavía (regla 1 del
-  Mensaje 0: no adelantar módulos futuros). Módulo 12 (teleconsulta) se
-  resolvió en este cierre — ver TODO-33. Módulo 15 (reserva pública)
-  sigue dependiendo de `website` (módulo 22, tampoco construido).
+- TODO-24([extendido], módulos 14-15 medical): portal/mensajería
+  paciente-médico, reserva pública de citas — módulos separados en la
+  tabla, no construidos todavía (regla 1 del Mensaje 0: no adelantar
+  módulos futuros). Módulo 13 (facturación médica básica) se resolvió
+  en este cierre — ver TODO-35. Módulo 15 (reserva pública) sigue
+  dependiendo de `website` (módulo 22, tampoco construido).
 - TODO-25(notifications): **Resuelto en este cierre.** Fases 1-4
   completas: backend (86 rutas, 11 tests) + frontend (campana global +
   página de plantillas/envío).
@@ -952,6 +1014,18 @@ spec 7.1) — **Fases 1-4 completas**
   cuando haya credenciales configurables — sin bloqueo técnico, la
   interfaz ya está lista (DED-37), mismo criterio que TODO-27
   (notifications) y TODO-32 (attachments).
+- TODO-35(medical — facturación médica básica, módulo 13): **Resuelto en
+  este cierre.** Fases 1-4 completas: backend (104 rutas, 5 tests,
+  primer cruce real con el motor de asientos de `accounting`) + frontend
+  (sección "Facturación" en `AppointmentDetailDialog`).
+- TODO-36(medical — facturación, extensión futura): líneas de conceptos
+  facturables por consulta (procedimientos, insumos) en vez de un solo
+  `amount` (DED-41) — si se necesita desglosar la factura.
+- TODO-37(medical — facturación, integración futura): cuando el cliente
+  activa `administrative` después de haber emitido comprobantes
+  `simple_receipt`, esos comprobantes NO se migran retroactivamente a
+  asientos contables (DED-40) — declarado explícito por la spec, sin
+  resolver en este cierre.
 
 ## 7. Proyecto de migración (si aplica)
 - Estado: sin proyecto de migración contratado.

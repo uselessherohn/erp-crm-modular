@@ -987,6 +987,64 @@ Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
 
 ---
 
+---
+
+## MÓDULO 13 — `medical`, facturación médica básica — Fases 1-4 completas
+
+Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
+
+- "Si `accounting` está activo" (spec) se interpretó como "el paquete `administrative` está
+  activo para la compañía" (DED-40) — no existe una activación granular por sub-módulo dentro de
+  un paquete (spec 2.4: los paquetes son Administrativo/Médico/Farmacéutico/Web, sin una bandera
+  separada para "solo accounting dentro de administrative").
+- Un solo `amount` por consulta, sin líneas de conceptos (DED-41) — la spec dice "recibo/factura
+  por consulta", no un desglose facturable.
+- Cuando `administrative` está activo: **se reutiliza el motor de asientos real de `accounting`**
+  (`InvoiceService.create_draft` + `.post()`, sección 7.1) con `source_document_type=
+  'medical_consultation'` — sin duplicar lógica de facturación dentro de `medical` (DED-42). Esto
+  significa que el `Contact` del paciente debe tener `is_customer=true` para poder facturarlo,
+  igual que cualquier otro contacto que se quiera facturar en el ERP — `medical` no lo activa en
+  silencio, se propaga el mismo error que ya existía en `accounting`.
+- Cuando `administrative` NO está activo: se genera un `MedicalBillingRecord` en modo
+  `simple_receipt`, con numeración atómica real (`DocumentNumberingService`,
+  doc_type='medical_receipt') pero sin asiento contable — declarado como TODO explícito (spec) si
+  el cliente activa Administrativo más tarde: los recibos simples emitidos antes no se migran
+  retroactivamente a asientos contables en este cierre.
+- **Primer test del proyecto que cruza `medical` con el motor de asientos real de `accounting`**.
+  Como no existe ningún seed automático de Plan de Cuentas en todo el proyecto (spec DED-10 de
+  `accounting`: nunca se hardcodea una cuenta), el propio test tuvo que construir su fixture real:
+  crear `Account` para receivable/income/tax y `DocumentAccountMapping` para
+  `document_type='sales_invoice'` — exactamente lo que tendría que hacer cualquier cliente nuevo
+  antes de poder facturar. Funcionó al primer intento.
+- Migración con RLS+grants, mismo patrón. `tests/test_medical_module.py` extendido con 5 tests
+  nuevos (36/36 en el archivo, 97/97 en el backend completo): comprobante simple cuando
+  `administrative` inactivo, factura real contabilizada cuando está activo (verificando que
+  `invoice.status == "posted"` y que el `journal_entry_id` quedó poblado — no solo que el registro
+  de `medical` se creó), rechazo de un segundo comprobante activo para la misma consulta, anular y
+  volver a facturar permitido (consulta -> 0..N comprobantes en el tiempo, mismo criterio que
+  Recetas), facturación sobre consulta inexistente → 404.
+- Contrato re-congelado a 104 rutas (101+3).
+- **Hallazgo real de Fase 3 (frontend)**: el primer intento del test de integración asumía que el
+  comprobante caería en modo `simple_receipt`, pero la compañía de prueba compartida ("El Roble")
+  ya tiene el paquete `administrative` activo desde el bootstrap del entorno — el camino real es
+  `accounting_invoice`, que además exige `is_customer=true` en el contacto del paciente. Se ajustó
+  el test para reflejar el comportamiento real en vez de forzar el otro camino: se activa
+  `is_customer` en el paciente y se construye el Plan de Cuentas mínimo (con códigos únicos por
+  corrida para no chocar con ejecuciones previas contra la misma base persistente) antes de
+  facturar desde la UI.
+- Frontend: sección "Facturación" integrada en `AppointmentDetailDialog.tsx` (misma ubicación que
+  Recetas/Laboratorio) — emitir comprobante, anular con motivo. `MedicalPage.integration.test.tsx`
+  extendido con el flujo completo, verificando contra el backend que la factura quedó realmente
+  contabilizada (`invoice_id` presente), no solo que la UI mostró un mensaje de éxito.
+- `npx tsc --noEmit` y `npm run build`: limpios. `pytest tests/` final desde una base recreada de
+  cero (16 migraciones): **97/97**.
+- **Módulo 13 (medical — facturación médica básica) cerrado — Fases 1-4 completas.** Con este
+  cierre, Médico llega a 5 de sus 6 módulos construibles hoy — solo falta portal/mensajería
+  paciente-médico (módulo 14); la reserva pública de citas (módulo 15) sigue bloqueada porque
+  depende de `website` (módulo 22), que no existe todavía.
+
+---
+
 ## Limitaciones de red del sandbox, documentadas explícitamente durante el proyecto
 - `ui.shadcn.com` no disponible → componentes UI escritos a mano sobre Radix.
 - `cdn.playwright.dev` no disponible → Vitest+jsdom como sustituto de E2E real en navegador

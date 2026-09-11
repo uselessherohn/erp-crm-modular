@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -276,5 +277,50 @@ class TeleconsultationSessionRead(BaseModel):
     status: TeleconsultationStatusEnum
     started_at: datetime | None
     ended_at: datetime | None
+    created_at: datetime
+    created_by: int
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 13 — Facturación Médica Básica
+# ---------------------------------------------------------------------------
+class MedicalBillingModeEnum(str, Enum):
+    accounting_invoice = "accounting_invoice"
+    simple_receipt = "simple_receipt"
+
+
+class MedicalBillingStatusEnum(str, Enum):
+    issued = "issued"
+    cancelled = "cancelled"
+
+
+class MedicalBillingCreate(BaseModel):
+    consultation_id: int
+    amount: Decimal = Field(..., gt=0)
+    currency_code: str = Field(default="HNL", max_length=3)
+    issue_date: date
+    tax_rate_id: int | None = None
+
+
+class MedicalBillingCancel(BaseModel):
+    cancel_reason: str = Field(..., min_length=1, max_length=500)
+
+
+class MedicalBillingRecordRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    consultation_id: int
+    patient_contact_id: int
+    professional_user_id: int
+    billing_mode: MedicalBillingModeEnum
+    status: MedicalBillingStatusEnum
+    amount: Decimal
+    currency_code: str
+    issue_date: date
+    invoice_id: int | None
+    receipt_number: str | None
+    cancelled_at: datetime | None
+    cancel_reason: str | None
     created_at: datetime
     created_by: int

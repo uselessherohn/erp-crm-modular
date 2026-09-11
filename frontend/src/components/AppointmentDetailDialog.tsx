@@ -24,6 +24,9 @@ import {
   useCreateTeleconsultation,
   useStartTeleconsultation,
   useEndTeleconsultation,
+  useBillingForConsultation,
+  useCreateMedicalBilling,
+  useCancelMedicalBilling,
 } from "@/hooks/use-medical";
 import { useContacts } from "@/hooks/use-contacts";
 import { useUsers } from "@/hooks/use-core-data";
@@ -285,6 +288,8 @@ export function AppointmentDetailDialog({ appointmentId, onOpenChange }: { appoi
             {consultation && (
               <LabOrdersSection consultation={consultation} patientContactId={appointment.patient_contact_id} />
             )}
+
+            {consultation && <BillingSection consultation={consultation} />}
           </div>
         )}
       </DialogContent>
@@ -661,6 +666,87 @@ function TeleconsultationSection({ appointment }: { appointment: { id: number; s
                 Finalizar
               </Button>
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Módulo 13 — Facturación Médica Básica
+// ---------------------------------------------------------------------------
+function BillingSection({ consultation }: { consultation: { id: number } }) {
+  const { data: record } = useBillingForConsultation(consultation.id);
+  const createBilling = useCreateMedicalBilling();
+  const cancelBilling = useCancelMedicalBilling();
+
+  const [showForm, setShowForm] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const submitBilling = async () => {
+    setError(null);
+    try {
+      await createBilling.mutateAsync({
+        consultation_id: consultation.id,
+        amount,
+        currency_code: "HNL",
+        issue_date: new Date().toISOString().slice(0, 10),
+      });
+      setShowForm(false);
+      setAmount("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo emitir el comprobante");
+    }
+  };
+
+  const submitCancel = async () => {
+    if (!record || !cancelReason) return;
+    setError(null);
+    try {
+      await cancelBilling.mutateAsync({ recordId: record.id, payload: { cancel_reason: cancelReason } });
+      setCancelReason("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo anular el comprobante");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+      <p className="text-xs font-medium text-muted-foreground">Facturación</p>
+
+      {error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+      {record && record.status !== "cancelled" && (
+        <div className="flex flex-col gap-1 text-sm">
+          <p>
+            {record.billing_mode === "accounting_invoice" ? "Factura contabilizada" : "Recibo simple"}
+            {record.receipt_number ? ` — ${record.receipt_number}` : ""}
+          </p>
+          <p className="text-muted-foreground">{record.currency_code} {record.amount}</p>
+          <div className="flex gap-2">
+            <Input placeholder="Motivo de anulación" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+            <Button size="sm" variant="destructive" disabled={!cancelReason} onClick={submitCancel}>
+              Anular
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {(!record || record.status === "cancelled") && !showForm && (
+        <Button size="sm" variant="outline" className="w-fit" onClick={() => setShowForm(true)}>
+          Emitir comprobante
+        </Button>
+      )}
+
+      {(!record || record.status === "cancelled") && showForm && (
+        <div className="flex flex-col gap-2">
+          <Input placeholder="Monto (ej. 500.00)" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <div className="flex gap-2">
+            <Button size="sm" disabled={!amount} onClick={submitBilling}>Emitir</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
           </div>
         </div>
       )}

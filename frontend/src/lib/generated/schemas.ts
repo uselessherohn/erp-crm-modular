@@ -1078,6 +1078,40 @@ const TeleconsultationSessionRead = z
     created_by: z.number().int(),
   })
   .passthrough();
+const MedicalBillingCreate = z
+  .object({
+    consultation_id: z.number().int(),
+    amount: z.union([z.number(), z.string()]),
+    currency_code: z.string().max(3).optional().default("HNL"),
+    issue_date: z.string(),
+    tax_rate_id: z.union([z.number(), z.null()]).optional(),
+  })
+  .passthrough();
+const MedicalBillingModeEnum = z.enum(["accounting_invoice", "simple_receipt"]);
+const MedicalBillingStatusEnum = z.enum(["issued", "cancelled"]);
+const MedicalBillingRecordRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    consultation_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    billing_mode: MedicalBillingModeEnum,
+    status: MedicalBillingStatusEnum,
+    amount: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+    currency_code: z.string(),
+    issue_date: z.string(),
+    invoice_id: z.union([z.number(), z.null()]),
+    receipt_number: z.union([z.string(), z.null()]),
+    cancelled_at: z.union([z.string(), z.null()]),
+    cancel_reason: z.union([z.string(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+    created_by: z.number().int(),
+  })
+  .passthrough();
+const MedicalBillingCancel = z
+  .object({ cancel_reason: z.string().min(1).max(500) })
+  .passthrough();
 const NotificationTemplateCreate = z
   .object({
     code: z.string().min(1).max(100),
@@ -1255,6 +1289,11 @@ export const schemas = {
   TeleconsultationSessionCreate,
   TeleconsultationStatusEnum,
   TeleconsultationSessionRead,
+  MedicalBillingCreate,
+  MedicalBillingModeEnum,
+  MedicalBillingStatusEnum,
+  MedicalBillingRecordRead,
+  MedicalBillingCancel,
   NotificationTemplateCreate,
   NotificationTemplateRead,
   NotificationTemplateUpdate,

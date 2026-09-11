@@ -34,6 +34,7 @@ from app.medical.services import (
     ClinicalRecordService,
     ConsultationService,
     LabOrderService,
+    MedicalBillingService,
     PrescriptionService,
     TeleconsultationService,
     get_by_appointment,
@@ -489,3 +490,47 @@ async def end_teleconsultation(
 ) -> schemas.TeleconsultationSessionRead:
     session = await TeleconsultationService.end(db, company_id=company_id, session_id=session_id)
     return schemas.TeleconsultationSessionRead.model_validate(session)
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 13 — Facturación Médica Básica
+# ---------------------------------------------------------------------------
+@router.post("/billing", response_model=schemas.MedicalBillingRecordRead, status_code=201)
+async def create_medical_billing(
+    payload: schemas.MedicalBillingCreate,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("medical:billing:create")),
+) -> schemas.MedicalBillingRecordRead:
+    record = await MedicalBillingService.create(db, company_id=company_id, payload=payload, created_by=actor.id)
+    return schemas.MedicalBillingRecordRead.model_validate(record)
+
+
+@router.get("/consultations/{consultation_id}/billing", response_model=schemas.MedicalBillingRecordRead | None)
+async def get_medical_billing_for_consultation(
+    consultation_id: int,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(get_current_user),
+) -> schemas.MedicalBillingRecordRead | None:
+    consultation = await ConsultationService.get(
+        db, company_id=company_id, consultation_id=consultation_id, actor_user_id=actor.id
+    )
+    await _require_clinical_read(
+        db, actor=actor, patient_contact_id=consultation.patient_contact_id,
+        all_permission="medical:billing:read-all", own_permission="medical:billing:read-own-patients",
+    )
+    record = await MedicalBillingService.get_for_consultation(db, company_id=company_id, consultation_id=consultation_id)
+    return schemas.MedicalBillingRecordRead.model_validate(record) if record else None
+
+
+@router.post("/billing/{record_id}/cancel", response_model=schemas.MedicalBillingRecordRead)
+async def cancel_medical_billing(
+    record_id: int,
+    payload: schemas.MedicalBillingCancel,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("medical:billing:create")),
+) -> schemas.MedicalBillingRecordRead:
+    record = await MedicalBillingService.cancel(db, company_id=company_id, record_id=record_id, payload=payload, actor_id=actor.id)
+    return schemas.MedicalBillingRecordRead.model_validate(record)

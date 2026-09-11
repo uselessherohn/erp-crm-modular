@@ -58,14 +58,17 @@ sección 4; resumen acá):
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     LargeBinary,
+    Numeric,
     String,
     func,
 )
@@ -440,4 +443,94 @@ class TeleconsultationSession(Base):
 
     __table_args__ = (
         CheckConstraint(f"status IN {TELECONSULTATION_STATUSES}", name="ck_teleconsultation_sessions_status"),
+    )
+
+
+# ---------------------------------------------------------------------------------------
+# Módulo 13 — medical: facturación médica básica
+# (spec 8.2, "Facturación Médica Básica [core]")
+#
+# DECISIONES DEDUCIBLE/AMBIGUO de este módulo:
+#
+# - DED-40: "si `accounting` está activo" (spec) se interpreta como "el
+#   paquete `administrative` está activo para la compañía" — no existe
+#   una activación granular por sub-módulo dentro de un paquete (spec
+#   2.4: los paquetes son Administrativo/Médico/Farmacéutico/Web, sin
+#   una bandera separada para "solo accounting dentro de administrative").
+#   `accounting` es la pieza de `administrative` que expone el motor de
+#   asientos, así que "activo" == paquete `administrative` activo.
+# - DED-41: un solo monto por consulta (`amount`), sin líneas de
+#   conceptos — la spec dice "recibo/factura por consulta", no un
+#   desglose de conceptos facturables. TODO explícito si se necesita
+#   facturar procedimientos/insumos por separado en el futuro.
+# - DED-42: cuando `administrative` SÍ está activo, se reutiliza el
+#   motor de asientos real (`accounting.InvoiceService`, sección 7.1)
+#   creando un `Invoice` con `source_document_type='medical_consultation'`
+#   — NO se duplica lógica de facturación dentro de `medical`. Esto
+#   significa que el `Contact` del paciente debe tener `is_customer=true`
+#   para poder facturarlo (`InvoiceService.create_draft` ya lo exige) —
+#   `medical` no lo activa en silencio; si falta, se propaga el mismo
+#   error que cualquier otro intento de facturar a un contacto sin ese
+#   flag (regla general del ERP, no una regla nueva de este módulo).
+# - Cuando `administrative` NO está activo, se genera un
+#   `MedicalBillingRecord` en modo `simple_receipt` — comprobante simple
+#   con numeración atómica real (`DocumentNumberingService`,
+#   doc_type='medical_receipt') pero SIN asiento contable — declarado
+#   como TODO explícito (spec) si el cliente activa Administrativo más
+#   tarde: los recibos simples emitidos antes de esa activación no se
+#   migran retroactivamente a asientos contables en este cierre.
+# ---------------------------------------------------------------------------
+class MedicalBillingModeEnum(str, enum.Enum):
+    accounting_invoice = "accounting_invoice"
+    simple_receipt = "simple_receipt"
+
+
+MEDICAL_BILLING_MODES = tuple(m.value for m in MedicalBillingModeEnum)
+
+
+class MedicalBillingStatusEnum(str, enum.Enum):
+    issued = "issued"
+    cancelled = "cancelled"
+
+
+MEDICAL_BILLING_STATUSES = tuple(s.value for s in MedicalBillingStatusEnum)
+
+
+class MedicalBillingRecord(Base):
+    """Facturación Médica Básica [core]. Ver DED-40/41/42 arriba. Una fila
+    por consulta facturada, sin importar el modo (`accounting_invoice`
+    delega el detalle real a `accounting.Invoice` vía `invoice_id`;
+    `simple_receipt` guarda el monto y el número directamente acá)."""
+
+    __tablename__ = "medical_billing_records"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+
+    consultation_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("consultations.id"), nullable=False, index=True)
+    patient_contact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=False, index=True)
+    professional_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+
+    billing_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="issued")
+
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False, server_default="HNL")
+    issue_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # billing_mode == accounting_invoice
+    invoice_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("invoices.id"), nullable=True)
+    # billing_mode == simple_receipt
+    receipt_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(f"billing_mode IN {MEDICAL_BILLING_MODES}", name="ck_medical_billing_records_mode"),
+        CheckConstraint(f"status IN {MEDICAL_BILLING_STATUSES}", name="ck_medical_billing_records_status"),
+        CheckConstraint("amount > 0", name="ck_medical_billing_records_amount_positive"),
     )

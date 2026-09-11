@@ -126,6 +126,9 @@ async def bootstrap():
             models.Permission(code="medical:teleconsultation:create", description="Abrir/iniciar/finalizar sesión de teleconsulta"),
             models.Permission(code="medical:teleconsultation:read-own-patients", description="Ver teleconsulta de pacientes propios"),
             models.Permission(code="medical:teleconsultation:read-all", description="Ver teleconsulta de cualquier paciente"),
+            models.Permission(code="medical:billing:create", description="Emitir/anular facturación médica"),
+            models.Permission(code="medical:billing:read-own-patients", description="Ver facturación de pacientes propios"),
+            models.Permission(code="medical:billing:read-all", description="Ver facturación de cualquier paciente"),
         ]
         db.add_all(perms)
         await db.flush()
