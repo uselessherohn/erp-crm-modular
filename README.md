@@ -10,10 +10,11 @@ lo hecho, fase por fase).
 
 ## Estado actual del proyecto
 
-**14 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
+**15 módulos completos de punta a punta** (Fases 1-4: modelos, servicios,
 contrato congelado, frontend, tests de integración reales) — **el
-paquete Administrativo está completo, Médico tiene cinco módulos, y el
-primer módulo Transversal (notifications) también**:
+paquete Administrativo está completo, Médico tiene sus 5 módulos
+construibles hoy completos, y el primer módulo Transversal
+(notifications) también**:
 
 | # | Módulo | Paquete | Estado |
 |---|--------|---------|--------|
@@ -30,10 +31,12 @@ primer módulo Transversal (notifications) también**:
 | 11 | medical — laboratorio | Médico | ✓ Completo |
 | 12 | medical — teleconsulta | Médico | ✓ Completo |
 | 13 | medical — facturación médica básica | Médico | ✓ Completo |
+| 14 | medical — portal/mensajería paciente-médico | Médico | ✓ Completo |
 | 26 | notifications | Transversal | ✓ Completo |
 
-Los módulos 14-15 de Médico (portal/mensajería paciente-médico, reserva
-pública de citas), los paquetes Farmacéutico y Web, y los módulos
+Solo falta un módulo de Médico: reserva pública de citas (módulo 15),
+bloqueado porque depende de `website` (módulo 22, paquete Web, tampoco
+construido). Los paquetes Farmacéutico y Web, y los módulos
 transversales restantes (reports, audit completo), todavía no se
 empezaron.
 
@@ -66,7 +69,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 97/97 esperados
+pytest tests/ -q   # 101/101 esperados
 
 # Frontend
 cd frontend
@@ -87,7 +90,7 @@ npx vitest run       # suite de integración real contra el backend de arriba
   `LOG_EJECUCION.md`. Es la bitácora cronológica completa, módulo por
   módulo, fase por fase.
 - **¿Quieres el contrato de API vigente?** → `contracts/openapi.json`
-  (104 rutas al momento de este corte).
+  (107 rutas al momento de este corte).
 - **¿Quieres la tabla de módulos y dependencias del sistema completo?** →
   `modulos_erp_crm_v10_4.json` (26 módulos totales planeados).
 

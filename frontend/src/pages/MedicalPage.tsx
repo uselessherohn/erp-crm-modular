@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useContacts } from "@/hooks/use-contacts";
 import { useUsers } from "@/hooks/use-core-data";
-import { useAppointments, usePatientRecords, useCreateRecordEntry } from "@/hooks/use-medical";
+import { useAppointments, usePatientRecords, useCreateRecordEntry, usePatientMessages, useSendPatientMessage, useMarkPatientMessageRead } from "@/hooks/use-medical";
 import { CreateAppointmentDialog } from "@/components/CreateAppointmentDialog";
 import { AppointmentDetailDialog } from "@/components/AppointmentDetailDialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
@@ -202,7 +203,102 @@ export function MedicalPage() {
         )}
       </section>
 
+      {selectedPatientId && <MessagesSection patientContactId={selectedPatientId} />}
+
       <AppointmentDetailDialog appointmentId={selectedAppointmentId} onOpenChange={(open) => !open && setSelectedAppointmentId(null)} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Módulo 14 — Portal / Mensajería Paciente-Médico
+// ---------------------------------------------------------------------------
+function MessagesSection({ patientContactId }: { patientContactId: number }) {
+  const { data: users } = useUsers();
+  // Poll simple cada 30s, mismo criterio que la campana de notifications
+  // (sin WebSocket/SSE en este cierre).
+  const { data: messages, isLoading } = usePatientMessages(patientContactId, { pollMs: 30_000 });
+  const sendMessage = useSendPatientMessage();
+  const markRead = useMarkPatientMessageRead();
+
+  const [professionalId, setProfessionalId] = useState("");
+  const [senderRole, setSenderRole] = useState<"professional" | "patient">("professional");
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const professionalName = (id: number) => {
+    const u = users?.find((u) => u.id === id);
+    return u?.full_name ?? u?.email ?? `#${id}`;
+  };
+
+  const submit = async () => {
+    if (!professionalId || !body.trim()) return;
+    setError(null);
+    try {
+      await sendMessage.mutateAsync({
+        patient_contact_id: patientContactId, professional_user_id: Number(professionalId),
+        sender_role: senderRole, body,
+      });
+      setBody("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo enviar el mensaje");
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-lg font-medium text-foreground">Mensajes</h2>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Cargando mensajes…</p>}
+      {!isLoading && (messages ?? []).length === 0 && <p className="text-sm text-muted-foreground">Sin mensajes todavía.</p>}
+
+      <div className="flex flex-col gap-2">
+        {(messages ?? []).map((m) => (
+          <div
+            key={m.id}
+            className={cn(
+              "flex max-w-md flex-col gap-0.5 rounded-md border border-border p-2 text-sm",
+              m.sender_role === "patient" ? "self-start bg-secondary/50" : "self-end bg-primary/5"
+            )}
+          >
+            <span className="text-xs font-medium text-muted-foreground">
+              {m.sender_role === "patient" ? "Paciente" : professionalName(m.professional_user_id)}
+            </span>
+            <p>{m.body}</p>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground">{new Date(m.created_at).toLocaleString()}</span>
+              {m.sender_role === "patient" && !m.read_at && (
+                <button className="text-[10px] text-primary underline" onClick={() => markRead.mutate(m.id)}>
+                  Marcar leído
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={professionalId} onValueChange={setProfessionalId}>
+            <SelectTrigger aria-label="Profesional"><SelectValue placeholder="Profesional" /></SelectTrigger>
+            <SelectContent>
+              {users?.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.full_name ?? u.email}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={senderRole} onValueChange={(v) => setSenderRole(v as "professional" | "patient")}>
+            <SelectTrigger aria-label="Remitente"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="professional">De parte del profesional</SelectItem>
+              <SelectItem value="patient">De parte del paciente (transcrito)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Input placeholder="Mensaje…" value={body} onChange={(e) => setBody(e.target.value)} />
+        {error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        <Button size="sm" className="w-fit" disabled={!professionalId || !body.trim()} onClick={submit}>
+          Enviar
+        </Button>
+      </div>
+    </section>
   );
 }

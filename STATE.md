@@ -47,7 +47,7 @@ es transparente a nivel de API).
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
-- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (—), reserva pública de citas (—)
+- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (— bloqueado por `website`)
 - Farmacéutico: (—) todos
 - Web: (—) todos
 - Transversal: reports (—), audit completo (—), notifications (✓ Completo — Fases 1-4 completas)
@@ -732,6 +732,43 @@ spec 7.1) — **Fases 1-4 completas**
   factura quedó realmente contabilizada (`invoice_id` presente, no solo
   un estado visual).
 
+### `medical` — portal / mensajería paciente-médico (módulo 14) — ✓ COMPLETO
+- **Rutas nuevas: 3** (107 rutas totales, 104 previas + 3):
+  `POST /medical/messages`, `GET /medical/patients/{patient_contact_id}/messages`,
+  `POST /medical/messages/{id}/read`.
+- `notifications` (módulo 26) es Transversal en este proyecto — sin
+  `require_package`, siempre disponible sin importar el paquete
+  contratado (DED-43). La rama de la spec "si `notifications` no está
+  activo, hilo mínimo sin avisos" nunca se ejecuta en este sistema tal
+  como está construido: cada mensaje `sender_role='patient'` dispara
+  siempre una notificación in-app real al profesional tratante.
+- **Sin autenticación de pacientes** (DED-44) — este proyecto nunca
+  construyó login para `Contact`. Los mensajes con `sender_role='patient'`
+  se registran por personal clínico en nombre del paciente (transcripción
+  de llamada/correo) — `author_user_id` (siempre un `User` real,
+  autenticado) es distinto de `sender_role` (de parte de quién habla el
+  mensaje). TODO explícito: portal con autenticación propia del paciente,
+  fuera de alcance de este cierre.
+- Aviso automático de "resultados de laboratorio disponibles" (mencionado
+  como caso de uso en la spec) **NO** se integró con el cierre de una
+  `LabOrder` del módulo 11 en este cierre, para no reabrir/modificar
+  código ya cerrado y probado — declarado como TODO explícito.
+- 4 tests backend nuevos (101/101 total): mensaje de profesional a
+  paciente NO genera notificación (evita ruido — el profesional que
+  escribe no necesita que se le notifique a sí mismo), mensaje de
+  paciente SÍ genera notificación real (verificado contra la tabla
+  `notifications`, no solo que el servicio no lanzó error), orden
+  cronológico + marcar leído, mensaje sobre contacto sin `is_patient`
+  rechazado. Todos al primer intento.
+- Frontend: sección "Mensajes" en `MedicalPage.tsx` (bajo el selector de
+  paciente compartido con Expediente Clínico, no dentro de una cita
+  específica — la mensajería es a nivel paciente, no a nivel consulta),
+  con poll cada 30s (mismo criterio que `NotificationBell`).
+  `MedicalPage.integration.test.tsx` con un test nuevo: envía un mensaje
+  de parte del paciente, verifica contra el backend que la notificación
+  real se generó para el profesional correcto, y marca el mensaje como
+  leído verificando que persiste.
+
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
   producto. Datos de prueba truncados al cerrar cada fase.)
@@ -786,8 +823,22 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-40 | #13 medical (facturación) | DEDUCIBLE | "accounting activo" = paquete `administrative` activo — no existe activación granular por sub-módulo dentro de un paquete. | Documentado, no requiere confirmación |
 | DED-41 | #13 medical (facturación) | DEDUCIBLE | Un solo `amount` por consulta, sin líneas de conceptos — la spec dice "recibo/factura por consulta", no un desglose facturable. | Documentado, no requiere confirmación — TODO si se necesita facturar conceptos por separado |
 | DED-42 | #13 medical (facturación) | DEDUCIBLE | Cuando `administrative` activo, se reutiliza el motor de asientos real de `accounting` (sin duplicar lógica) — el paciente debe tener `is_customer=true`, misma regla que cualquier factura. | Documentado, no requiere confirmación |
+| DED-43 | #14 medical (portal/mensajería) | DEDUCIBLE | `notifications` es Transversal (sin `require_package`) en este proyecto — siempre disponible; no aplica la rama condicional de la spec ("si no está activo, hilo mínimo sin avisos"). | Documentado, no requiere confirmación |
+| DED-44 | #14 medical (portal/mensajería) | DEDUCIBLE | Sin autenticación de pacientes — mensajes `sender_role='patient'` los registra personal clínico en nombre del paciente, `author_user_id` siempre es un `User` real. | Documentado, no requiere confirmación — TODO si se construye portal con login propio del paciente |
 
 ## 5. Resumen rodante (solo los últimos 3 módulos cerrados)
+- Módulo 14 (medical — portal/mensajería paciente-médico) — **Fases 1-4
+  completas.** `notifications` es Transversal en este proyecto (sin
+  `require_package`, DED-43) — siempre disponible, así que cada mensaje
+  `sender_role='patient'` dispara una notificación in-app real al
+  profesional, sin rama condicional. Sin autenticación de pacientes
+  (DED-44) — mensajes de paciente los registra personal clínico en su
+  nombre, `author_user_id` siempre un `User` real. Contrato
+  re-congelado: 107 rutas (104+3). 4 tests backend nuevos (101/101
+  total) — todos al primer intento, incluida la verificación real de
+  que la notificación se generó (no solo que el servicio no lanzó
+  error). Frontend: sección "Mensajes" en `MedicalPage` a nivel
+  paciente (no dentro de una cita), con poll cada 30s.
 - Módulo 13 (medical — facturación médica básica) — **Fases 1-4
   completas.** "accounting activo" = paquete `administrative` activo
   (DED-40, sin activación granular por sub-módulo). Un solo `amount` por
@@ -816,22 +867,6 @@ spec 7.1) — **Fases 1-4 completas**
   — **todos al primer intento**. Frontend: sección "Teleconsulta" en
   `AppointmentDetailDialog`, visible ya con solo la cita creada (a
   diferencia de Recetas/Laboratorio, que esperan a que exista consulta).
-- Módulo 11 (medical — laboratorio) — **Fases 1-4 completas.** Cabecera
-  (`LabOrder`) + líneas (`LabOrderTest`, DED-34), orden/resultado en la
-  misma fila (DED-35), orden pasa a `completed` automáticamente cuando
-  se resultan todas sus pruebas, valor crítico marcado explícitamente
-  (DED-36). **Primer uso real de `core.Attachment`** (tabla existente
-  desde el módulo 1, nunca antes conectada) — `AttachmentService`
-  genérico con almacenamiento en disco local (DEDUCIBLE, sin proveedor
-  real en el sandbox), expuesto vía endpoints anidados por módulo
-  consumidor, no un `POST /attachments` universal. **Hallazgo real de
-  Fase 4**: la orden no completaba automáticamente por un `autoflush=
-  False` (decisión ya existente de `core`) que ocultaba el cambio recién
-  hecho en memoria al chequeo de "todas resultadas" — corregido con
-  `flush()` explícito. Contrato re-congelado: 96 rutas (90+6). 5 tests
-  backend nuevos (86/86 total). Frontend: sección "Laboratorio" en
-  `AppointmentDetailDialog` + dos helpers nuevos en `api-client.ts`
-  (`apiUploadFile`, `apiDownloadFile` — `apiRequest` solo sabe JSON).
 - Módulo 10 (medical — recetas) — **Fases 1-4 completas.** Cabecera
   (`Prescription`) + líneas (`PrescriptionLine`, DED-31), `dispensing_
   status` calculado según paquete `pharmacy` activo (DED-30), sin
@@ -969,12 +1004,11 @@ spec 7.1) — **Fases 1-4 completas**
   backend (modelos, `pgcrypto`, `EXCLUDE USING gist`, servicios, routers,
   80 rutas, 15 tests backend) + frontend (`MedicalPage` + 2 diálogos,
   test de integración con verificación RBAC real).
-- TODO-24([extendido], módulos 14-15 medical): portal/mensajería
-  paciente-médico, reserva pública de citas — módulos separados en la
-  tabla, no construidos todavía (regla 1 del Mensaje 0: no adelantar
-  módulos futuros). Módulo 13 (facturación médica básica) se resolvió
-  en este cierre — ver TODO-35. Módulo 15 (reserva pública) sigue
-  dependiendo de `website` (módulo 22, tampoco construido).
+- TODO-24([extendido], módulo 15 medical): reserva pública de citas —
+  único módulo de la tabla de Médico que falta; sigue bloqueado porque
+  depende de `website` (módulo 22, paquete Web, tampoco construido).
+  Módulo 14 (portal/mensajería) se resolvió en este cierre — ver
+  TODO-38. Con esto, Médico tiene sus 5 módulos construibles completos.
 - TODO-25(notifications): **Resuelto en este cierre.** Fases 1-4
   completas: backend (86 rutas, 11 tests) + frontend (campana global +
   página de plantillas/envío).
@@ -1026,6 +1060,18 @@ spec 7.1) — **Fases 1-4 completas**
   `simple_receipt`, esos comprobantes NO se migran retroactivamente a
   asientos contables (DED-40) — declarado explícito por la spec, sin
   resolver en este cierre.
+- TODO-38(medical — portal/mensajería, módulo 14): **Resuelto en este
+  cierre.** Fases 1-4 completas: backend (107 rutas, 4 tests, primera
+  integración real con `notifications` desde otro módulo) + frontend
+  (sección "Mensajes" en `MedicalPage`, a nivel paciente).
+- TODO-39(medical — portal/mensajería, extensión futura): portal de
+  paciente con autenticación propia (DED-44) — cuando exista, el
+  paciente podría escribir mensajes directamente sin pasar por personal
+  clínico transcribiendo.
+- TODO-40(medical — portal/mensajería, integración futura): aviso
+  automático de "resultados de laboratorio disponibles" (mencionado en
+  la spec) integrado con el cierre de una `LabOrder` (módulo 11) — no se
+  conectó en este cierre para no reabrir código ya probado.
 
 ## 7. Proyecto de migración (si aplica)
 - Estado: sin proyecto de migración contratado.

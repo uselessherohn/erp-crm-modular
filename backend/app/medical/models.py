@@ -534,3 +534,74 @@ class MedicalBillingRecord(Base):
         CheckConstraint(f"status IN {MEDICAL_BILLING_STATUSES}", name="ck_medical_billing_records_status"),
         CheckConstraint("amount > 0", name="ck_medical_billing_records_amount_positive"),
     )
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 14 — medical: portal / mensajería paciente-médico
+# (spec 8.2, "Portal / Mensajería Paciente-Médico [extendido]")
+#
+# DECISIONES DEDUCIBLE/AMBIGUO de este módulo:
+#
+# - DED-43: la spec habla de "reutiliza `notifications`... si está
+#   activo; si no, es un hilo de mensajes mínimo dentro de `medical`".
+#   En este proyecto `notifications` (módulo 26) es Transversal — SIN
+#   `require_package`, disponible siempre sin importar qué paquete tenga
+#   la compañía (a diferencia de cómo se leería la frase de la spec en
+#   aislado, que sugiere una activación condicional). Por lo tanto, en
+#   este cierre `notifications` SIEMPRE está disponible: cada mensaje de
+#   un paciente hacia el consultorio dispara una notificación in-app real
+#   al profesional tratante — no hace falta la rama de "hilo mínimo sin
+#   notificaciones" que describe la spec, porque esa condición ("si no
+#   está activo") nunca ocurre en este sistema tal como está construido.
+# - DED-44: **sin autenticación de pacientes** — este proyecto nunca
+#   construyó un portal con login propio para `Contact` (los pacientes no
+#   son `User`, no tienen credenciales). Los mensajes con
+#   `sender_role='patient'` se registran por personal clínico en nombre
+#   del paciente (ej. transcribiendo una llamada o un correo recibido por
+#   otro canal) — el remitente real que escribe en el sistema siempre es
+#   un `User` autenticado, `sender_role` solo distingue de parte de quién
+#   habla el mensaje. TODO explícito: cuando exista un portal de paciente
+#   con autenticación propia, se agrega un endpoint separado para que el
+#   paciente escriba directamente sin pasar por personal clínico.
+# - Notificación de resultados de laboratorio disponibles (mencionado en
+#   la spec como caso de uso) — NO se integró automáticamente con el
+#   cierre de una `LabOrder` en este módulo, para no reabrir/modificar
+#   código ya cerrado y probado del módulo 11 en este cierre. Declarado
+#   como TODO explícito, no una omisión silenciosa.
+# ---------------------------------------------------------------------------
+class PatientMessageSenderRoleEnum(str, enum.Enum):
+    professional = "professional"
+    patient = "patient"
+
+
+PATIENT_MESSAGE_SENDER_ROLES = tuple(r.value for r in PatientMessageSenderRoleEnum)
+
+
+class PatientMessage(Base):
+    """Portal / Mensajería Paciente-Médico [extendido]. Ver DED-43/44
+    arriba. Canal asíncrono de texto — no es videollamada (eso lo cubre
+    Teleconsulta, módulo 12)."""
+
+    __tablename__ = "patient_messages"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+
+    patient_contact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=False, index=True)
+    professional_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+
+    sender_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Quien realmente escribió la fila en el sistema (siempre un User
+    # autenticado, DED-44) — coincide con professional_user_id cuando
+    # sender_role='professional'; es el staff que transcribió cuando
+    # sender_role='patient'.
+    author_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+
+    body: Mapped[str] = mapped_column(String(2000), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        CheckConstraint(f"sender_role IN {PATIENT_MESSAGE_SENDER_ROLES}", name="ck_patient_messages_sender_role"),
+    )

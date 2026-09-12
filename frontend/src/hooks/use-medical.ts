@@ -359,3 +359,45 @@ export function useCancelMedicalBilling() {
       qc.invalidateQueries({ queryKey: ["medical", "consultations", record.consultation_id, "billing"] }),
   });
 }
+
+// ---------------------------------------------------------------------------------
+// Módulo 14 — Portal / Mensajería Paciente-Médico
+// ---------------------------------------------------------------------------
+type PatientMessageRead = components["schemas"]["PatientMessageRead"];
+type PatientMessageCreate = z.infer<typeof schemas.PatientMessageCreate>;
+
+export function usePatientMessages(patientContactId: number | null, options?: { pollMs?: number }) {
+  return useQuery({
+    queryKey: ["medical", "patients", patientContactId, "messages"],
+    queryFn: () =>
+      apiRequest<PatientMessageRead[]>(`/medical/patients/${patientContactId}/messages`, {
+        responseSchema: schemas.PatientMessageRead.array(),
+      }),
+    enabled: patientContactId !== null,
+    refetchInterval: options?.pollMs,
+  });
+}
+
+export function useSendPatientMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: PatientMessageCreate) =>
+      apiRequest<PatientMessageRead>("/medical/messages", {
+        method: "POST", body: payload, responseSchema: schemas.PatientMessageRead,
+      }),
+    onSuccess: (message) =>
+      qc.invalidateQueries({ queryKey: ["medical", "patients", message.patient_contact_id, "messages"] }),
+  });
+}
+
+export function useMarkPatientMessageRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (messageId: number) =>
+      apiRequest<PatientMessageRead>(`/medical/messages/${messageId}/read`, {
+        method: "POST", responseSchema: schemas.PatientMessageRead,
+      }),
+    onSuccess: (message) =>
+      qc.invalidateQueries({ queryKey: ["medical", "patients", message.patient_contact_id, "messages"] }),
+  });
+}

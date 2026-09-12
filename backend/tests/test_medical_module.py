@@ -31,6 +31,7 @@ from app.medical.services import (
     ConsultationService,
     LabOrderService,
     MedicalBillingService,
+    PatientMessageService,
     PrescriptionService,
     TeleconsultationService,
     professional_has_treated,
@@ -1005,4 +1006,100 @@ async def test_billing_requires_existing_consultation(db, company, professional)
             db, company_id=company.id,
             payload=medical_schemas.MedicalBillingCreate(consultation_id=999999, amount=Decimal("100"), issue_date=date.today()),
             created_by=professional.id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Módulo 14 — Portal / Mensajería Paciente-Médico
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_message_professional_to_patient_no_notification(db, company, patient, professional):
+    message = await PatientMessageService.send(
+        db, company_id=company.id,
+        payload=medical_schemas.PatientMessageCreate(
+            patient_contact_id=patient.id, professional_user_id=professional.id,
+            sender_role=medical_schemas.PatientMessageSenderRoleEnum.professional,
+            body="Recuerde tomar el medicamento con alimentos.",
+        ),
+        author_user_id=professional.id,
+    )
+    assert message.sender_role == "professional"
+    assert message.author_user_id == professional.id
+
+    notifications = (
+        await db.execute(text("SELECT count(*) FROM notifications WHERE recipient_user_id = :uid"), {"uid": professional.id})
+    ).scalar_one()
+    assert notifications == 0
+
+
+@pytest.mark.asyncio
+async def test_message_patient_to_professional_creates_notification(db, company, patient, professional):
+    unique = uuid.uuid4().hex[:8]
+    staff = await UserService.create_user(
+        db, company_id=company.id,
+        payload=core_schemas.UserCreate(email=f"staff.{unique}@test.hn", full_name="Staff Recepción", password="SuperSegura123"),
+        created_by=None,
+    )
+    message = await PatientMessageService.send(
+        db, company_id=company.id,
+        payload=medical_schemas.PatientMessageCreate(
+            patient_contact_id=patient.id, professional_user_id=professional.id,
+            sender_role=medical_schemas.PatientMessageSenderRoleEnum.patient,
+            body="Doctor, sigo con dolor después de la consulta.",
+        ),
+        author_user_id=staff.id,  # DED-44: quien escribe en el sistema es staff, no el paciente
+    )
+    assert message.sender_role == "patient"
+    assert message.author_user_id == staff.id
+
+    notifications = (
+        await db.execute(
+            text("SELECT title, recipient_user_id FROM notifications WHERE recipient_user_id = :uid"),
+            {"uid": professional.id},
+        )
+    ).all()
+    assert len(notifications) == 1
+    assert notifications[0].title == "Nuevo mensaje de paciente"
+
+
+@pytest.mark.asyncio
+async def test_message_list_for_patient_ordered_and_mark_read(db, company, patient, professional):
+    first = await PatientMessageService.send(
+        db, company_id=company.id,
+        payload=medical_schemas.PatientMessageCreate(
+            patient_contact_id=patient.id, professional_user_id=professional.id,
+            sender_role=medical_schemas.PatientMessageSenderRoleEnum.patient, body="Primer mensaje",
+        ),
+        author_user_id=professional.id,
+    )
+    second = await PatientMessageService.send(
+        db, company_id=company.id,
+        payload=medical_schemas.PatientMessageCreate(
+            patient_contact_id=patient.id, professional_user_id=professional.id,
+            sender_role=medical_schemas.PatientMessageSenderRoleEnum.professional, body="Segundo mensaje",
+        ),
+        author_user_id=professional.id,
+    )
+    messages = await PatientMessageService.list_for_patient(db, company_id=company.id, patient_contact_id=patient.id)
+    assert [m.id for m in messages] == [first.id, second.id]
+    assert first.read_at is None
+
+    read_first = await PatientMessageService.mark_read(db, company_id=company.id, message_id=first.id)
+    assert read_first.read_at is not None
+
+
+@pytest.mark.asyncio
+async def test_message_requires_patient_flag(db, company, professional):
+    non_patient = await ContactService.create_contact(
+        db, company_id=company.id, payload=contacts_schemas.ContactCreate(name="No Paciente Mensajes", is_customer=True),
+        created_by=None,
+    )
+    with pytest.raises(ValidationError):
+        await PatientMessageService.send(
+            db, company_id=company.id,
+            payload=medical_schemas.PatientMessageCreate(
+                patient_contact_id=non_patient.id, professional_user_id=professional.id,
+                sender_role=medical_schemas.PatientMessageSenderRoleEnum.professional, body="No debería enviarse",
+            ),
+            author_user_id=professional.id,
         )

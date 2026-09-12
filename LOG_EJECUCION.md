@@ -1045,6 +1045,57 @@ Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
 
 ---
 
+---
+
+## MÓDULO 14 — `medical`, portal/mensajería paciente-médico — Fases 1-4 completas
+
+Último módulo construible de Médico por ahora (el que queda, reserva pública de citas, depende de
+`website`, que no existe).
+
+- `notifications` (módulo 26) es Transversal en este proyecto — sin `require_package`, siempre
+  disponible sin importar el paquete contratado (DED-43). La spec describe una rama condicional
+  ("reutiliza `notifications` si está activo; si no, hilo mínimo sin avisos") que en este sistema
+  nunca se ejecuta, porque la condición "si no está activo" no puede ocurrir tal como está
+  construido `notifications`. Cada mensaje `sender_role='patient'` dispara siempre una
+  notificación in-app real al profesional tratante — **primera vez que un módulo llama al
+  servicio de `notifications` desde fuera de su propio paquete**, confirmando que la interfaz
+  documentada como "pensada para ser llamada desde el código de otros módulos" en el cierre de
+  `notifications` funciona como se pretendía.
+- **Sin autenticación de pacientes** (DED-44) — este proyecto nunca construyó login para
+  `Contact` (los pacientes no son `User`). Se resolvió con dos campos separados en
+  `PatientMessage`: `sender_role` (de parte de quién habla el mensaje) y `author_user_id` (quién
+  realmente lo escribió en el sistema, siempre un `User` autenticado) — cuando `sender_role=
+  'patient'`, `author_user_id` es el staff que transcribió una llamada o correo recibido por otro
+  canal, no el paciente mismo.
+- El aviso automático de "resultados de laboratorio disponibles" que la spec menciona como caso
+  de uso de este canal **no se conectó** al cierre de una `LabOrder` (módulo 11) en este cierre —
+  se evaluó hacerlo, pero modificar el flujo de `enter_result`/`get` de un módulo ya cerrado y con
+  25 tests pasando para agregar una llamada cruzada nueva se consideró un riesgo de regresión
+  innecesario para el alcance de este cierre. Declarado como TODO explícito, no una omisión.
+- Migración con RLS+grants, mismo patrón. `tests/test_medical_module.py` extendido con 4 tests
+  nuevos (40/40 en el archivo, 101/101 en el backend completo): mensaje de profesional a paciente
+  no genera notificación (un profesional no necesita que se le avise de su propio mensaje),
+  mensaje de paciente sí genera notificación real — verificado consultando directamente la tabla
+  `notifications`, no solo que el servicio no lanzó una excepción —, orden cronológico + marcar
+  leído, mensaje sobre un contacto sin `is_patient` rechazado. Todos al primer intento.
+- Contrato re-congelado a 107 rutas (104+3).
+- Frontend: sección "Mensajes" agregada a `MedicalPage.tsx`, bajo el mismo selector de paciente
+  que ya usaba Expediente Clínico — la mensajería vive a nivel paciente, no dentro de una cita
+  específica, a diferencia de Recetas/Laboratorio/Facturación (que sí cuelgan de una consulta).
+  Burbujas de mensaje diferenciadas visualmente por `sender_role`, con poll cada 30 segundos
+  (mismo criterio que `NotificationBell`). `MedicalPage.integration.test.tsx` extendido con un
+  test nuevo: envía un mensaje de parte del paciente desde la UI, verifica contra el backend que
+  la notificación real llegó al profesional correcto (por `recipient_user_id`, no solo por
+  título), y marca el mensaje como leído verificando que persiste.
+- `npx tsc --noEmit` y `npm run build`: limpios. `pytest tests/` final desde una base recreada de
+  cero (17 migraciones): **101/101**.
+- **Módulo 14 (medical — portal/mensajería) cerrado — Fases 1-4 completas.** Con este cierre,
+  Médico completa sus 6 módulos construibles hoy (9, 10, 11, 12, 13, 14 — el 15 sigue bloqueado
+  por `website`). AMB-02 (retención de auditoría clínica) sigue siendo la única decisión abierta
+  de todo el paquete Médico.
+
+---
+
 ## Limitaciones de red del sandbox, documentadas explícitamente durante el proyecto
 - `ui.shadcn.com` no disponible → componentes UI escritos a mano sobre Radix.
 - `cdn.playwright.dev` no disponible → Vitest+jsdom como sustituto de E2E real en navegador

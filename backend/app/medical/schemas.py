@@ -324,3 +324,31 @@ class MedicalBillingRecordRead(BaseModel):
     cancel_reason: str | None
     created_at: datetime
     created_by: int
+
+
+# ---------------------------------------------------------------------------
+# Módulo 14 — Portal / Mensajería Paciente-Médico
+# ---------------------------------------------------------------------------
+class PatientMessageSenderRoleEnum(str, Enum):
+    professional = "professional"
+    patient = "patient"
+
+
+class PatientMessageCreate(BaseModel):
+    patient_contact_id: int
+    professional_user_id: int
+    sender_role: PatientMessageSenderRoleEnum
+    body: str = Field(..., min_length=1, max_length=2000)
+
+
+class PatientMessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    patient_contact_id: int
+    professional_user_id: int
+    sender_role: PatientMessageSenderRoleEnum
+    author_user_id: int
+    body: str
+    read_at: datetime | None
+    created_at: datetime

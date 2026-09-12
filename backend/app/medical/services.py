@@ -958,3 +958,74 @@ class MedicalBillingService:
         await db.commit()
         await db.refresh(record)
         return record
+
+
+# ---------------------------------------------------------------------------
+# Módulo 14 — Portal / Mensajería Paciente-Médico. Ver DED-43/44 arriba.
+# ---------------------------------------------------------------------------
+class PatientMessageService:
+    @staticmethod
+    async def send(
+        db: AsyncSession, *, company_id: int, payload: schemas.PatientMessageCreate, author_user_id: int
+    ) -> models.PatientMessage:
+        patient = await _get_patient_or_raise(db, company_id=company_id, patient_contact_id=payload.patient_contact_id)
+
+        message = models.PatientMessage(
+            company_id=company_id, patient_contact_id=patient.id,
+            professional_user_id=payload.professional_user_id, sender_role=payload.sender_role.value,
+            author_user_id=author_user_id, body=payload.body,
+        )
+        db.add(message)
+        await db.flush()
+
+        await AuditService.log_event(
+            db, company_id=company_id, event="medical.message.send", entity_type="patient_message",
+            entity_id=message.id, user_id=author_user_id,
+        )
+
+        if payload.sender_role.value == "patient":
+            # DED-43: notifications es Transversal en este proyecto (sin
+            # require_package) — siempre disponible, se notifica siempre
+            # al profesional tratante, no hay rama condicional.
+            from app.notifications import schemas as notifications_schemas
+            from app.notifications.services import NotificationService
+
+            await NotificationService.send(
+                db, company_id=company_id,
+                payload=notifications_schemas.NotificationSend(
+                    recipient_user_id=payload.professional_user_id,
+                    title="Nuevo mensaje de paciente",
+                    body=f"{patient.name}: {payload.body[:200]}",
+                ),
+            )
+
+        await db.commit()
+        await db.refresh(message)
+        return message
+
+    @staticmethod
+    async def list_for_patient(db: AsyncSession, *, company_id: int, patient_contact_id: int) -> list[models.PatientMessage]:
+        result = await db.execute(
+            select(models.PatientMessage)
+            .where(models.PatientMessage.company_id == company_id, models.PatientMessage.patient_contact_id == patient_contact_id)
+            .order_by(models.PatientMessage.created_at)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def mark_read(db: AsyncSession, *, company_id: int, message_id: int) -> models.PatientMessage:
+        result = await db.execute(
+            select(models.PatientMessage).where(
+                models.PatientMessage.company_id == company_id, models.PatientMessage.id == message_id
+            )
+        )
+        message = result.scalar_one_or_none()
+        if message is None:
+            raise NotFoundError(f"Mensaje {message_id} no encontrado")
+        if message.read_at is None:
+            from sqlalchemy import func as sa_func
+
+            message.read_at = sa_func.now()
+            await db.commit()
+            await db.refresh(message)
+        return message

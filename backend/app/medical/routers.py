@@ -35,6 +35,7 @@ from app.medical.services import (
     ConsultationService,
     LabOrderService,
     MedicalBillingService,
+    PatientMessageService,
     PrescriptionService,
     TeleconsultationService,
     get_by_appointment,
@@ -534,3 +535,43 @@ async def cancel_medical_billing(
 ) -> schemas.MedicalBillingRecordRead:
     record = await MedicalBillingService.cancel(db, company_id=company_id, record_id=record_id, payload=payload, actor_id=actor.id)
     return schemas.MedicalBillingRecordRead.model_validate(record)
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 14 — Portal / Mensajería Paciente-Médico
+# ---------------------------------------------------------------------------
+@router.post("/messages", response_model=schemas.PatientMessageRead, status_code=201)
+async def send_patient_message(
+    payload: schemas.PatientMessageCreate,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("medical:message:create")),
+) -> schemas.PatientMessageRead:
+    message = await PatientMessageService.send(db, company_id=company_id, payload=payload, author_user_id=actor.id)
+    return schemas.PatientMessageRead.model_validate(message)
+
+
+@router.get("/patients/{patient_contact_id}/messages", response_model=list[schemas.PatientMessageRead])
+async def list_patient_messages(
+    patient_contact_id: int,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(get_current_user),
+) -> list[schemas.PatientMessageRead]:
+    await _require_clinical_read(
+        db, actor=actor, patient_contact_id=patient_contact_id,
+        all_permission="medical:message:read-all", own_permission="medical:message:read-own-patients",
+    )
+    messages = await PatientMessageService.list_for_patient(db, company_id=company_id, patient_contact_id=patient_contact_id)
+    return [schemas.PatientMessageRead.model_validate(m) for m in messages]
+
+
+@router.post("/messages/{message_id}/read", response_model=schemas.PatientMessageRead)
+async def mark_patient_message_read(
+    message_id: int,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    _actor: User = Depends(require_permission("medical:message:create")),
+) -> schemas.PatientMessageRead:
+    message = await PatientMessageService.mark_read(db, company_id=company_id, message_id=message_id)
+    return schemas.PatientMessageRead.model_validate(message)

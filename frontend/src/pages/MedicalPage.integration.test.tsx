@@ -277,6 +277,56 @@ describe("MedicalPage — flujo real de medical contra backend en 127.0.0.1:8000
     // Restaurar sesión de admin para no afectar el resto del proceso.
     setTokens(adminTokens.access_token, adminTokens.refresh_token);
   }, 30000);
+
+  it("envía un mensaje al profesional en nombre del paciente, verifica la notificación real, y lo marca leído", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText("Paciente")).toBeInTheDocument(), { timeout: 15000 });
+    await user.click(screen.getByLabelText("Paciente"));
+    await user.click(await screen.findByRole("option", { name: patientName }));
+
+    await waitFor(() => expect(screen.getByText("Mensajes")).toBeInTheDocument(), { timeout: 10000 });
+
+    await user.click(screen.getByLabelText("Profesional"));
+    await user.click((await screen.findAllByRole("option"))[0]);
+
+    await user.click(screen.getByLabelText("Remitente"));
+    await user.click(await screen.findByRole("option", { name: /de parte del paciente/i }));
+
+    const messageBody = `Doctor, sigo con molestias ${Date.now()}`;
+    await user.type(screen.getByPlaceholderText("Mensaje…"), messageBody);
+    await user.click(screen.getByRole("button", { name: /^enviar$/i }));
+
+    await waitFor(() => expect(screen.getByText(messageBody)).toBeInTheDocument(), { timeout: 10000 });
+
+    // Verificación real: DED-43 — como notifications es Transversal en
+    // este proyecto (siempre disponible), el mensaje del paciente debió
+    // generar una notificación in-app real para el profesional elegido.
+    const patients = await apiRequest<Array<{ id: number; name: string }>>("/contacts", { query: { search: patientName } });
+    const patientId = patients.find((p) => p.name === patientName)?.id;
+    const messages = await apiRequest<Array<{ id: number; body: string; sender_role: string; professional_user_id: number; read_at: string | null }>>(
+      `/medical/patients/${patientId}/messages`
+    );
+    const sentMessage = messages.find((m) => m.body === messageBody);
+    expect(sentMessage).toBeTruthy();
+    expect(sentMessage!.sender_role).toBe("patient");
+    expect(sentMessage!.read_at).toBeNull();
+
+    const notifications = await apiRequest<Array<{ title: string; recipient_user_id: number }>>("/notifications");
+    const messageNotification = notifications.find(
+      (n) => n.title === "Nuevo mensaje de paciente" && n.recipient_user_id === sentMessage!.professional_user_id
+    );
+    expect(messageNotification).toBeTruthy();
+
+    // Marcar leído desde la UI y verificar que persiste.
+    await user.click(screen.getByRole("button", { name: /marcar leído/i }));
+    await waitFor(async () => {
+      const refreshed = await apiRequest<Array<{ id: number; read_at: string | null }>>(`/medical/patients/${patientId}/messages`);
+      const found = refreshed.find((m) => m.id === sentMessage!.id);
+      expect(found?.read_at).not.toBeNull();
+    }, { timeout: 10000 });
+  }, 30000);
 });
 
 // Los permisos medical:* se crean con ids consecutivos por el bootstrap del

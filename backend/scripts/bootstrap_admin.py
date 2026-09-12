@@ -129,6 +129,9 @@ async def bootstrap():
             models.Permission(code="medical:billing:create", description="Emitir/anular facturación médica"),
             models.Permission(code="medical:billing:read-own-patients", description="Ver facturación de pacientes propios"),
             models.Permission(code="medical:billing:read-all", description="Ver facturación de cualquier paciente"),
+            models.Permission(code="medical:message:create", description="Enviar mensaje a/de paciente"),
+            models.Permission(code="medical:message:read-own-patients", description="Ver mensajes de pacientes propios"),
+            models.Permission(code="medical:message:read-all", description="Ver mensajes de cualquier paciente"),
         ]
         db.add_all(perms)
         await db.flush()

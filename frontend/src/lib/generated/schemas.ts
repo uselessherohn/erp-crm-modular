@@ -1112,6 +1112,28 @@ const MedicalBillingRecordRead = z
 const MedicalBillingCancel = z
   .object({ cancel_reason: z.string().min(1).max(500) })
   .passthrough();
+const PatientMessageSenderRoleEnum = z.enum(["professional", "patient"]);
+const PatientMessageCreate = z
+  .object({
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    sender_role: PatientMessageSenderRoleEnum,
+    body: z.string().min(1).max(2000),
+  })
+  .passthrough();
+const PatientMessageRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    professional_user_id: z.number().int(),
+    sender_role: PatientMessageSenderRoleEnum,
+    author_user_id: z.number().int(),
+    body: z.string(),
+    read_at: z.union([z.string(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
 const NotificationTemplateCreate = z
   .object({
     code: z.string().min(1).max(100),
@@ -1294,6 +1316,9 @@ export const schemas = {
   MedicalBillingStatusEnum,
   MedicalBillingRecordRead,
   MedicalBillingCancel,
+  PatientMessageSenderRoleEnum,
+  PatientMessageCreate,
+  PatientMessageRead,
   NotificationTemplateCreate,
   NotificationTemplateRead,
   NotificationTemplateUpdate,

@@ -1678,6 +1678,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/medical/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Patient Message */
+        post: operations["send_patient_message_medical_messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/patients/{patient_contact_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Patient Messages */
+        get: operations["list_patient_messages_medical_patients__patient_contact_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medical/messages/{message_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Patient Message Read */
+        post: operations["mark_patient_message_read_medical_messages__message_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications/templates": {
         parameters: {
             query?: never;
@@ -2951,6 +3002,44 @@ export interface components {
          * @enum {string}
          */
         OpportunityStatusEnum: "open" | "won" | "lost";
+        /** PatientMessageCreate */
+        PatientMessageCreate: {
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            sender_role: components["schemas"]["PatientMessageSenderRoleEnum"];
+            /** Body */
+            body: string;
+        };
+        /** PatientMessageRead */
+        PatientMessageRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Professional User Id */
+            professional_user_id: number;
+            sender_role: components["schemas"]["PatientMessageSenderRoleEnum"];
+            /** Author User Id */
+            author_user_id: number;
+            /** Body */
+            body: string;
+            /** Read At */
+            read_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * PatientMessageSenderRoleEnum
+         * @enum {string}
+         */
+        PatientMessageSenderRoleEnum: "professional" | "patient";
         /** PaymentAllocationCreate */
         PaymentAllocationCreate: {
             /** Invoice Id */
@@ -7912,6 +8001,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MedicalBillingRecordRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_patient_message_medical_messages_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatientMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientMessageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_patient_messages_medical_patients__patient_contact_id__messages_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                patient_contact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientMessageRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_patient_message_read_medical_messages__message_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                message_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientMessageRead"];
                 };
             };
             /** @description Validation Error */
