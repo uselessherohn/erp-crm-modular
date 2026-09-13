@@ -132,6 +132,14 @@ async def bootstrap():
             models.Permission(code="medical:message:create", description="Enviar mensaje a/de paciente"),
             models.Permission(code="medical:message:read-own-patients", description="Ver mensajes de pacientes propios"),
             models.Permission(code="medical:message:read-all", description="Ver mensajes de cualquier paciente"),
+            models.Permission(code="website:page:create", description="Crear página del CMS"),
+            models.Permission(code="website:page:list", description="Listar páginas del CMS"),
+            models.Permission(code="website:page:read", description="Ver una página del CMS"),
+            models.Permission(code="website:page:update", description="Editar página del CMS"),
+            models.Permission(code="website:page:publish", description="Publicar página del CMS"),
+            models.Permission(code="website:page:unpublish", description="Despublicar página del CMS"),
+            models.Permission(code="website:form_submission:list", description="Listar envíos de formularios de captación"),
+            models.Permission(code="website:form_submission:read", description="Ver un envío de formulario de captación"),
         ]
         db.add_all(perms)
         await db.flush()
@@ -159,6 +167,12 @@ async def bootstrap():
         # que se documentó en el cierre de `pipeline`.
         db.add(models.CompanyPackage(company_id=company_id, package="administrative", status="active"))
         db.add(models.CompanyPackage(company_id=company_id, package="medical", status="active"))
+        # website (módulo 22): fila `web` sin `minimal_modules` — compra
+        # directa del paquete completo, incluye ecommerce el día que se
+        # construya (módulo 23) bajo el criterio propuesto en
+        # diseno_modulos_22_25_erp_crm.md sección 2.1 (no confirmado por
+        # Roberto todavía).
+        db.add(models.CompanyPackage(company_id=company_id, package="web", status="active"))
 
         await db.commit()
         print("bootstrap ok — user_id:", user.id, "role_id:", role.id)

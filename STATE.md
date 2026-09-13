@@ -49,7 +49,7 @@ es transparente a nivel de API).
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
 - Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (— bloqueado por `website`)
 - Farmacéutico: (—) todos
-- Web: (—) todos
+- Web: website (△ Backend + frontend escritos, Fases 1 y 3 — **NO verificado**: sin Postgres/red/Node en el entorno donde se escribió, ver sección dedicada abajo), ecommerce (— diseño en `diseno_modulos_22_25_erp_crm.md`, no construido)
 - Transversal: reports (—), audit completo (—), notifications (✓ Completo — Fases 1-4 completas)
 
 ## 2. Contratos públicos vigentes (NO redefinir)
@@ -769,6 +769,91 @@ spec 7.1) — **Fases 1-4 completas**
   real se generó para el profesional correcto, y marca el mensaje como
   leído verificando que persiste.
 
+### `website` (módulo 22) — △ ESCRITO, NO VERIFICADO
+
+> A diferencia de todo lo demás en este documento, este cierre **no pasó
+> por el DoD real** (spec 11): se escribió backend + frontend completos
+> siguiendo al pie los contratos y patrones ya establecidos, pero el
+> entorno donde se hizo no tenía Postgres, acceso a red (ni `pip install`
+> ni `npm install` funcionaron — confirmado, no asumido), ni
+> `node_modules` instalado. **No confundir `△` con `✓`** — no se corrió
+> `pytest`, no se corrió `npm run build`/`vitest`, y el contrato
+> (`contracts/openapi.json`) NO se re-congeló porque eso requiere un
+> servidor real corriendo. Antes de marcar este módulo `(✓)` en la
+> sección 1, alguien con un entorno real tiene que:
+> 1. Levantar Postgres + correr las migraciones (incluye `be79a5e3b927`).
+> 2. Correr `pytest tests/test_website_module.py tests/test_core_module.py`
+>    (el segundo por el fix de `require_package`, ver hallazgo abajo).
+> 3. Levantar el servidor, congelar `contracts/openapi.json`
+>    (`curl http://127.0.0.1:8000/openapi.json`), correr
+>    `npx openapi-typescript` + `npx openapi-zod-client --export-schemas`,
+>    y **borrar `frontend/src/lib/website-temp-contract.ts`**,
+>    reemplazando sus usos en `use-website.ts`/`WebsitePage.tsx` por los
+>    tipos/schemas generados reales.
+> 4. Correr `npm run build` (chequeo de tipos) y
+>    `npx vitest run src/pages/WebsitePage.integration.test.tsx`.
+
+- **Rutas nuevas: 10** (117 rutas totales, 107 previas + 10): panel interno
+  (`POST/GET /website/pages`, `GET/PATCH /website/pages/{id}`,
+  `POST /website/pages/{id}/publish`, `POST /website/pages/{id}/unpublish`,
+  `GET /website/form-submissions`, `GET /website/form-submissions/{id}`) +
+  storefront público sin JWT (`GET /public/website/{company_id}/pages/{slug}`,
+  `POST /public/website/{company_id}/forms`).
+- Depende solo de Núcleo (spec 8.4) — sin tocar `inventory` ni ningún
+  paquete vertical. La dependencia `depende_de: [22, 3, 5, 6]` que el JSON
+  declara para `ecommerce` (23) es una relación de paquete comercial, no
+  una dependencia de código real de `website` — ver
+  `diseno_modulos_22_25_erp_crm.md` sección 1.
+- **DEDUCIBLE**: `Page` con dos estados (`draft`/`published`), sin flujo
+  de aprobación editorial — no confirmado por Roberto, extensión aditiva
+  si hace falta un tercer estado más adelante.
+- **DEDUCIBLE**: `FormSubmission` busca un `Contact` existente por email
+  dentro de la compañía antes de crear uno nuevo (evita duplicar leads);
+  si ya existe y no era `is_lead`, se marca `is_lead=true` sin pisar otros
+  flags (`is_customer`, etc.) — mismo criterio de "no duplicar el
+  concepto" que DED-15 (`pipeline` reutiliza `Contact`, no un modelo
+  `Lead` aparte).
+- **AMBIGUO, no confirmado por Roberto**: cómo resuelve el storefront
+  público el `company_id` de cada request en producción (subdominio,
+  dominio propio, header). Implementado con `company_id` explícito en la
+  URL (`/public/website/{company_id}/...`) — funcionalmente correcto y
+  suficiente para levantar el módulo, pero casi seguro no es el mecanismo
+  final. Cambiarlo el día que se confirme solo debería tocar
+  `website/dependencies.py`/`routers.py` (rutas públicas), no
+  `services.py` ni los modelos.
+- **Gating de paquete**: `require_package("web")` a nivel de router para
+  el panel interno (JWT); las rutas públicas usan
+  `ensure_web_package_active()` (mismo criterio de error
+  `PACKAGE_NOT_LICENSED`, sin duplicar la lógica de dominio de
+  `get_active_packages`) porque `require_package` depende de JWT, que una
+  request anónima del storefront no tiene.
+- **BUG REAL encontrado y corregido en `core/dependencies.py`** (afecta a
+  todo el proyecto, no solo a `website`): la condición de `minimal_module`
+  en `require_package()` tenía código muerto (`row.package != package`
+  siempre era `False`, porque `row` sale de `packages.get(package)`) — el
+  chequeo nunca bloqueaba nada, para ningún llamador, desde que se
+  escribió. No se había detectado porque ningún router real usaba
+  `minimal_module=` todavía (`pipeline` y `medical` lo usan sin ese
+  parámetro). Corregido con la semántica correcta (lista vacía/`None` =
+  compra completa, pasa cualquier submódulo; lista no vacía = solo pasa si
+  el submódulo está en la lista). Test de regresión agregado en
+  `tests/test_core_module.py`. Directamente relevante para el gating de
+  `ecommerce` (módulo 23, ver `diseno_modulos_22_25_erp_crm.md` sección
+  2.1) — sin este fix, ese diseño no se podía implementar de forma segura.
+- Bootstrap: paquete `web` activado para la compañía de prueba (El Roble)
+  y 8 permisos nuevos (`website:page:*`, `website:form_submission:*`)
+  agregados a `scripts/bootstrap_admin.py`.
+- 7 tests backend escritos (`test_website_module.py`, sin contar) + 1 test
+  de regresión en `test_core_module.py` — **NO ejecutados** (ver nota al
+  inicio de esta sección).
+- Frontend: `WebsitePage.tsx` (dos secciones: Páginas y Formularios
+  recibidos), `hooks/use-website.ts`, ruta `/website` + ítem de nav
+  "Sitio Web" en `AppLayout.tsx`. Usa
+  `frontend/src/lib/website-temp-contract.ts` — **shim temporal hecho a
+  mano**, NO viene de codegen (ver nota al inicio de esta sección para el
+  motivo y el TODO de reemplazo). `WebsitePage.integration.test.tsx`
+  escrito, **NO ejecutado**.
+
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
   producto. Datos de prueba truncados al cerrar cada fase.)
@@ -825,6 +910,9 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-42 | #13 medical (facturación) | DEDUCIBLE | Cuando `administrative` activo, se reutiliza el motor de asientos real de `accounting` (sin duplicar lógica) — el paciente debe tener `is_customer=true`, misma regla que cualquier factura. | Documentado, no requiere confirmación |
 | DED-43 | #14 medical (portal/mensajería) | DEDUCIBLE | `notifications` es Transversal (sin `require_package`) en este proyecto — siempre disponible; no aplica la rama condicional de la spec ("si no está activo, hilo mínimo sin avisos"). | Documentado, no requiere confirmación |
 | DED-44 | #14 medical (portal/mensajería) | DEDUCIBLE | Sin autenticación de pacientes — mensajes `sender_role='patient'` los registra personal clínico en nombre del paciente, `author_user_id` siempre es un `User` real. | Documentado, no requiere confirmación — TODO si se construye portal con login propio del paciente |
+| DED-45 | #22 website | DEDUCIBLE | `Page` con dos estados (`draft`/`published`), sin flujo de aprobación editorial. | Abierto — pendiente confirmación de Roberto |
+| DED-46 | #22 website | DEDUCIBLE | `FormSubmission` reutiliza un `Contact` existente por email (marcándolo `is_lead=true` si no lo era) en vez de crear un duplicado; sin email, siempre crea uno nuevo. | Abierto — pendiente confirmación de Roberto |
+| AMB-03 | #22 website | AMBIGUO | Cómo resuelve el storefront público el `company_id` de cada request en producción (subdominio, dominio propio, header) — implementado con `company_id` explícito en la URL como variante funcional mínima. | Abierto — pendiente confirmación de Roberto |
 
 ## 5. Resumen rodante (solo los últimos 3 módulos cerrados)
 - Módulo 14 (medical — portal/mensajería paciente-médico) — **Fases 1-4

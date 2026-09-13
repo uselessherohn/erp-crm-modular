@@ -269,3 +269,53 @@ async def test_require_package_blocks_uncontracted_and_deactivated(db, company):
     writable_checker = require_package_writable("pharmacy")
     with pytest.raises(PackageSuspendedError):
         await writable_checker(row=suspended_pkg)
+
+
+@pytest.mark.asyncio
+async def test_require_package_minimal_module_bug_fix(company):
+    """Regresión del bug real encontrado en el cierre del módulo 22
+    (website): la condición original de `minimal_module` nunca bloqueaba
+    nada porque `row.package != package` era código muerto (`row` siempre
+    sale de `packages.get(package)`, así que `row.package == package`
+    siempre). Sin consumidor real todavía (ningún router pasa
+    `minimal_module=`), así que este test prueba la función de dominio
+    directo, no vía HTTP — igual que
+    `test_require_package_blocks_uncontracted_and_deactivated` arriba."""
+    from app.core.dependencies import require_package
+    from app.shared.exceptions import PackageNotLicensedError
+
+    checker = require_package("administrative", minimal_module="sales")
+
+    # Arrastre real (ej. Farmacéutico) con minimal_modules=["inventory",
+    # "accounting"] — NO incluye "sales": debe bloquear.
+    arrastre_sin_sales = models.CompanyPackage(
+        company_id=company.id,
+        package="administrative",
+        status=models.PackageStatusEnum.active,
+        minimal_modules=["inventory", "accounting"],
+    )
+    with pytest.raises(PackageNotLicensedError):
+        await checker(packages={"administrative": arrastre_sin_sales})
+
+    # Arrastre real que SÍ incluye "sales" (ej. ecommerce, módulo 23) —
+    # debe pasar.
+    arrastre_con_sales = models.CompanyPackage(
+        company_id=company.id,
+        package="administrative",
+        status=models.PackageStatusEnum.active,
+        minimal_modules=["inventory", "sales", "accounting"],
+    )
+    result = await checker(packages={"administrative": arrastre_con_sales})
+    assert result is arrastre_con_sales
+
+    # Compra directa completa del Administrativo (minimal_modules
+    # None/vacío) — debe pasar para CUALQUIER minimal_module, sin importar
+    # cuál, porque no es un arrastre parcial.
+    compra_completa = models.CompanyPackage(
+        company_id=company.id,
+        package="administrative",
+        status=models.PackageStatusEnum.active,
+        minimal_modules=None,
+    )
+    result = await checker(packages={"administrative": compra_completa})
+    assert result is compra_completa

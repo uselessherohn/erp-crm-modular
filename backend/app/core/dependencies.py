@@ -170,8 +170,29 @@ def require_package(package: str, *, minimal_module: str | None = None):
             raise PackageNotLicensedError(f"Paquete '{package}' no contratado")
 
         if minimal_module is not None:
-            modules = row.minimal_modules or []
-            if minimal_module not in modules and row.package != package:
+            # BUG REAL encontrado en el cierre de `website` (módulo 22, al
+            # diseñar el gating de `ecommerce`/módulo 23): la condición
+            # original era `minimal_module not in modules and row.package
+            # != package`. `row` siempre sale de `packages.get(package)`
+            # (diccionario indexado por `row.package`), así que
+            # `row.package != package` era SIEMPRE False para cualquier
+            # `row` no-None — el `and` nunca se cumplía y el chequeo de
+            # `minimal_module` no bloqueaba nada, nunca, para ningún
+            # llamador. No se detectó antes porque ningún router real
+            # invocaba `require_package(..., minimal_module=...)` todavía
+            # (ver grep en el cierre: solo `pipeline` y `medical` lo usan,
+            # ninguno de los dos con `minimal_module`) — código sin
+            # consumidor real hasta ahora, mismo patrón de "bug dormido"
+            # que `Role.permissions` en el módulo 8.
+            #
+            # Semántica correcta: `minimal_modules` vacío/None en la fila
+            # significa "compra directa completa del paquete" (spec 2.4) —
+            # en ese caso CUALQUIER submódulo debe pasar, sin importar
+            # cuál. Solo cuando la fila es un arrastre real (lista no
+            # vacía) tiene sentido exigir que el submódulo puntual esté
+            # en esa lista.
+            modules = row.minimal_modules
+            if modules and minimal_module not in modules:
                 raise PackageNotLicensedError(
                     f"Submódulo mínimo '{minimal_module}' no incluido en el arrastre de '{package}'"
                 )
