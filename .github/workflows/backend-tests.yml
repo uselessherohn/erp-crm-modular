@@ -207,12 +207,13 @@ jobs:
       - name: Crear compañía "El Roble" + bootstrap_admin.py
         working-directory: backend
         run: |
+          set -euo pipefail
+          set -x
           curl -sf -X POST http://127.0.0.1:8000/internal/companies \
             -H "Content-Type: application/json" \
             -H "X-Internal-Api-Key: ${INTERNAL_API_KEY}" \
-            -d '{"name": "El Roble"}' > /tmp/company.json
-          cat /tmp/company.json
-          python scripts/bootstrap_admin.py
+            -d '{"name": "El Roble"}' | tee /tmp/company.json
+          python scripts/bootstrap_admin.py 2>&1 | tee /tmp/bootstrap.log
 
       - name: Congelar contracts/openapi.json contra el servidor real
         run: |
@@ -259,9 +260,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
-            echo "### ❌ npm run build / vitest falló en ${{ github.sha }} (job e2e)"
+            echo "### ❌ job e2e falló en ${{ github.sha }}"
+            echo "#### uvicorn"
             echo '```'
-            tail -c 60000 /tmp/uvicorn.log 2>/dev/null
+            tail -c 20000 /tmp/uvicorn.log 2>/dev/null
+            echo '```'
+            echo "#### POST /internal/companies"
+            echo '```'
+            cat /tmp/company.json 2>/dev/null
+            echo '```'
+            echo "#### bootstrap_admin.py"
+            echo '```'
+            tail -c 30000 /tmp/bootstrap.log 2>/dev/null
             echo '```'
           } > /tmp/comment_body_e2e.txt
           python3 -c "
