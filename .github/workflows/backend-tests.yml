@@ -128,3 +128,156 @@ jobs:
           )
           urllib.request.urlopen(req)
           "
+
+  e2e:
+    # Cubre los pasos 3 y 4 que STATE.md pide para el módulo website antes
+    # de marcarlo (✓): congelar contracts/openapi.json contra un servidor
+    # real (no simulado), y correr build + vitest del frontend contra ese
+    # mismo servidor — "suite de integración real contra el backend de
+    # arriba" tal como lo documenta el README, no solo pytest de backend.
+    needs: pytest
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_dev_pw
+          POSTGRES_DB: erp_crm_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://erp_app:erp_app_dev_pw@localhost:5432/erp_crm_dev
+      DATABASE_URL_AUTH_LOOKUP: postgresql+asyncpg://erp_auth_lookup:erp_auth_lookup_dev_pw@localhost:5432/erp_crm_dev
+      DATABASE_URL_ADMIN: postgresql+psycopg://postgres:postgres_dev_pw@localhost:5432/erp_crm_dev
+      JWT_SECRET_KEY: ci_test_secret_key_not_for_production
+      PGCRYPTO_KEY: ci_test_pgcrypto_key_not_for_production
+      INTERNAL_API_KEY: ci_test_internal_api_key_not_for_production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias backend
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Extensiones y rol erp_app
+        env:
+          PGPASSWORD: postgres_dev_pw
+        run: |
+          psql -h localhost -U postgres -d erp_crm_dev -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          psql -h localhost -U postgres -d erp_crm_dev -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          psql -h localhost -U postgres -d erp_crm_dev -c "
+            DO \$\$
+            BEGIN
+              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'erp_app') THEN
+                CREATE ROLE erp_app LOGIN PASSWORD 'erp_app_dev_pw' NOSUPERUSER NOBYPASSRLS;
+              END IF;
+            END
+            \$\$;
+          "
+
+      - name: alembic upgrade head
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Levantar uvicorn en segundo plano
+        working-directory: backend
+        run: |
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/health > /dev/null; then
+              echo "servidor listo"; exit 0
+            fi
+            sleep 1
+          done
+          echo "el servidor no respondió a tiempo"; cat /tmp/uvicorn.log; exit 1
+
+      - name: Crear compañía "El Roble" + bootstrap_admin.py
+        working-directory: backend
+        run: |
+          curl -sf -X POST http://127.0.0.1:8000/internal/companies \
+            -H "Content-Type: application/json" \
+            -H "X-Internal-Api-Key: ${INTERNAL_API_KEY}" \
+            -d '{"name": "El Roble"}' > /tmp/company.json
+          cat /tmp/company.json
+          python scripts/bootstrap_admin.py
+
+      - name: Congelar contracts/openapi.json contra el servidor real
+        run: |
+          curl -sf http://127.0.0.1:8000/openapi.json -o contracts/openapi.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add contracts/openapi.json
+          if git diff --cached --quiet; then
+            echo "contrato sin cambios"
+          else
+            git commit -m "chore(ci): congelar contracts/openapi.json contra el servidor real [skip ci]"
+            if [ "${{ github.event_name }}" = "push" ]; then
+              git push origin HEAD:${{ github.ref_name }}
+            else
+              echo "evento '${{ github.event_name }}' — no se hace push (solo se hace en push directo a una rama)"
+            fi
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm run build (tsc -b && vite build)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Aviso si el shim temporal de website sigue sin reemplazar
+        run: |
+          if [ -f frontend/src/lib/website-temp-contract.ts ]; then
+            echo "::warning::frontend/src/lib/website-temp-contract.ts sigue presente — el contrato ya se regeneró en este job, pero WebsitePage.tsx/use-website.ts todavía no se migraron a los tipos generados reales (paso 3 pendiente en STATE.md, módulo 22)."
+          fi
+
+      - name: npx vitest run (suite de integración real contra el backend de arriba)
+        working-directory: frontend
+        run: npx vitest run
+
+      - name: Publicar salida de vitest como comentario del commit (solo si falló)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### ❌ npm run build / vitest falló en ${{ github.sha }} (job e2e)"
+            echo '```'
+            tail -c 60000 /tmp/uvicorn.log 2>/dev/null
+            echo '```'
+          } > /tmp/comment_body_e2e.txt
+          python3 -c "
+          import json, os, urllib.request
+          with open('/tmp/comment_body_e2e.txt') as f:
+              body = f.read()
+          payload = json.dumps({'body': body}).encode()
+          req = urllib.request.Request(
+              'https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments',
+              data=payload,
+              method='POST',
+              headers={
+                  'Authorization': 'token ' + os.environ['GH_TOKEN'],
+                  'Accept': 'application/vnd.github+json',
+                  'Content-Type': 'application/json',
+              },
+          )
+          urllib.request.urlopen(req)
+          "
