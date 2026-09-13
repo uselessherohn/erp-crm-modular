@@ -252,7 +252,7 @@ jobs:
 
       - name: npx vitest run (suite de integración real contra el backend de arriba)
         working-directory: frontend
-        run: npx vitest run
+        run: npx vitest run 2>&1 | tee /tmp/vitest.log
 
       - name: Publicar salida de vitest como comentario del commit (solo si falló)
         if: failure()
@@ -263,7 +263,7 @@ jobs:
             echo "### ❌ job e2e falló en ${{ github.sha }}"
             echo "#### uvicorn"
             echo '```'
-            tail -c 20000 /tmp/uvicorn.log 2>/dev/null
+            tail -c 15000 /tmp/uvicorn.log 2>/dev/null
             echo '```'
             echo "#### POST /internal/companies"
             echo '```'
@@ -271,7 +271,11 @@ jobs:
             echo '```'
             echo "#### bootstrap_admin.py"
             echo '```'
-            tail -c 30000 /tmp/bootstrap.log 2>/dev/null
+            tail -c 5000 /tmp/bootstrap.log 2>/dev/null
+            echo '```'
+            echo "#### npx vitest run"
+            echo '```'
+            tail -c 45000 /tmp/vitest.log 2>/dev/null
             echo '```'
           } > /tmp/comment_body_e2e.txt
           python3 -c "
