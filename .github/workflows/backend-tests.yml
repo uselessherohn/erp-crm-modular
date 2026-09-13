@@ -213,7 +213,7 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-Internal-Api-Key: ${INTERNAL_API_KEY}" \
             -d '{"name": "El Roble"}' | tee /tmp/company.json
-          python scripts/bootstrap_admin.py 2>&1 | tee /tmp/bootstrap.log
+          PYTHONPATH="$(pwd)" python scripts/bootstrap_admin.py 2>&1 | tee /tmp/bootstrap.log
 
       - name: Congelar contracts/openapi.json contra el servidor real
         run: |
