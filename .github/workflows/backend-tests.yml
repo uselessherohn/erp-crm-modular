@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   pytest:
@@ -97,7 +99,7 @@ jobs:
       - name: Publicar traceback como comentario del commit (solo si falló)
         if: failure()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DIAG_TOKEN }}
         run: |
           {
             echo "### ❌ pytest tests/ -q falló en ${{ github.sha }}"
@@ -257,7 +259,7 @@ jobs:
       - name: Publicar salida de vitest como comentario del commit (solo si falló)
         if: failure()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DIAG_TOKEN }}
         run: |
           {
             echo "### ❌ job e2e falló en ${{ github.sha }}"
