@@ -1184,6 +1184,79 @@ const NotificationRead = z
     created_at: z.string().datetime({ offset: true }),
   })
   .passthrough();
+const DispensationLineRequest = z
+  .object({
+    product_id: z.number().int(),
+    quantity: z.union([z.number(), z.string()]),
+  })
+  .passthrough();
+const DispensationOrderCreate = z
+  .object({
+    warehouse_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    prescription_id: z.union([z.number(), z.null()]).optional(),
+    walk_in_reference: z.union([z.string(), z.null()]).optional(),
+    allergy_check_notes: z.union([z.string(), z.null()]).optional(),
+    payment_method: z.union([z.string(), z.null()]).optional(),
+    amount_charged: z.union([z.number(), z.string(), z.null()]).optional(),
+    lines: z.array(DispensationLineRequest).min(1),
+  })
+  .passthrough();
+const AllergyCheckSourceEnum = z.enum(["medical_record", "form"]);
+const DispensationStatusEnum = z.enum(["dispensed", "voided"]);
+const DispensationLineRead = z
+  .object({
+    id: z.number().int(),
+    product_id: z.number().int(),
+    lot_id: z.union([z.number(), z.null()]),
+    quantity: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+  })
+  .passthrough();
+const DispensationOrderRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    warehouse_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    dispensed_by: z.number().int(),
+    document_number: z.string(),
+    prescription_id: z.union([z.number(), z.null()]),
+    walk_in_reference: z.union([z.string(), z.null()]),
+    allergy_check_source: AllergyCheckSourceEnum,
+    allergy_check_notes: z.union([z.string(), z.null()]),
+    payment_method: z.union([z.string(), z.null()]),
+    amount_charged: z.union([z.string(), z.null()]),
+    status: DispensationStatusEnum,
+    voided_at: z.union([z.string(), z.null()]),
+    void_reason: z.union([z.string(), z.null()]),
+    dispensed_at: z.string().datetime({ offset: true }),
+    lines: z.array(DispensationLineRead),
+  })
+  .passthrough();
+const DispensationVoid = z
+  .object({ void_reason: z.string().min(1).max(500) })
+  .passthrough();
+const ControlledSubstanceMark = z
+  .object({ product_id: z.number().int() })
+  .passthrough();
+const ControlledSubstanceProductRead = z
+  .object({
+    id: z.number().int(),
+    product_id: z.number().int(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const ControlledSubstanceLogEntryRead = z
+  .object({
+    id: z.number().int(),
+    dispensation_line_id: z.number().int(),
+    product_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    dispensed_by: z.number().int(),
+    quantity: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
 
 export const schemas = {
   CompanyCreate,
@@ -1325,4 +1398,14 @@ export const schemas = {
   NotificationChannelEnum,
   NotificationSend,
   NotificationRead,
+  DispensationLineRequest,
+  DispensationOrderCreate,
+  AllergyCheckSourceEnum,
+  DispensationStatusEnum,
+  DispensationLineRead,
+  DispensationOrderRead,
+  DispensationVoid,
+  ControlledSubstanceMark,
+  ControlledSubstanceProductRead,
+  ControlledSubstanceLogEntryRead,
 };

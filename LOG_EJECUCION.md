@@ -1096,6 +1096,173 @@ Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
 
 ---
 
+---
+
+> **Nota sobre las 3 entradas siguientes (módulos 22, 23, 24)**: a diferencia
+> de todo el resto de este log, escrito en el momento de cada cierre, estas
+> tres entradas se reconstruyeron después, a partir de `STATE.md` — el
+> material original nunca las escribió (el entorno donde se construyeron
+> esos módulos no tenía red/Postgres/Node, y el log de ejecución en vivo
+> quedó sin actualizar). El detalle técnico es el mismo que ya vivía en
+> `STATE.md`; esto solo lo trae al log narrativo para que la línea de tiempo
+> quede completa. Ver también la nota `△ ESCRITO, NO VERIFICADO` en cada
+> sección de `STATE.md` — sigue aplicando, esta reconstrucción no verifica
+> nada nuevo (eso lo hace el CI, por separado).
+
+## MÓDULO 22 — `website`, primer módulo del paquete Web (reconstruido de STATE.md)
+
+Elegido para desbloquear la reserva pública de citas (módulo 15, Médico), que depende de
+`website`. Depende solo de Núcleo (spec 8.4) — no toca `inventory` ni ningún paquete vertical.
+
+- **BUG REAL encontrado y corregido**: `require_package(..., minimal_module=...)` nunca evaluaba
+  la condición (`row.package != package` siempre falso) — dead code desde que existe la función.
+  Sin consumidor real hasta este cierre, así que nunca afectó producción, pero el fix era
+  condición previa para el gating de `ecommerce` (módulo 23, ver más abajo). Test de regresión
+  agregado en `test_core_module.py`.
+- `Page` con dos estados (`draft`/`published`), sin flujo de aprobación editorial (DED-45).
+- `FormSubmission` reutiliza un `Contact` existente por email antes de crear uno nuevo, marcándolo
+  `is_lead=true` si no lo era (DED-46) — mismo criterio de "no duplicar el concepto" que `pipeline`
+  (DED-15).
+- Storefront público sin JWT, `company_id` explícito en la URL — no confirmado que sea el mecanismo
+  final de producción (subdominio/dominio propio quedan como alternativa, AMB-03).
+- Contrato: 10 rutas nuevas (117 totales, 107 previas + 10). 7 tests backend + 1 test de regresión
+  en `core`, escritos sin correr en el entorno de escritura.
+- **Verificado externamente después, vía CI** (GitHub Actions, jobs `pytest` + `e2e` con
+  Postgres/servidor reales, no simulados): 109/109 tests, `npm run build` + `vitest run` completo
+  de los 16 archivos de integración del frontend, contrato re-congelado automáticamente contra el
+  servidor vivo.
+- **Módulo 22 (website) cerrado a nivel de código — Fases 1 y 3 escritas, verificación externa
+  completada después vía CI.**
+
+---
+
+---
+
+## MÓDULO 23 — `ecommerce`, paquete Web (reconstruido de STATE.md)
+
+Depende de `website` (22) a nivel de paquete comercial (spec), no de código real — construido
+inmediatamente después en la misma tabla.
+
+- Checkout crea un `sales.SalesOrder` real vía `SalesOrderService.create_draft(...,
+  _skip_commit=True)` — mismo patrón que `QuoteService.convert_to_order` (módulo 5). No se inventó
+  un modelo `Order` paralelo.
+- Gating de paquete resuelto reutilizando `minimal_modules` tal cual (`require_package("web",
+  minimal_module="ecommerce")` + `require_package("administrative", minimal_module="sales")`) —
+  más simple de lo que anticipaba `diseno_modulos_22_25_erp_crm.md` sección 2.1, gracias al fix del
+  bug de módulo 22. El bootstrap de "El Roble" no necesitó tocarse.
+- **Hallazgo real no anticipado en el diseño**: `sales.SalesOrder` exige `warehouse_id`
+  obligatorio, y `inventory.Warehouse` no tiene ningún campo "por defecto" — se agregó
+  `EcommerceSettings` (`default_warehouse_id`/`default_price_list_id`/`webhook_secret` por
+  compañía); el checkout falla con `ValidationError` explícito si no está configurada.
+- Webhook verificado con HMAC-SHA256 + secreto por compañía, contrato de payload propio
+  simplificado — no se integró ningún SDK de pasarela real (Stripe/PayPal/MercadoPago), TODO
+  explícito (DED-49).
+- Carrito anónimo como token opaco (`X-Cart-Token`), no cookie firmada — desviación deliberada del
+  diseño original (DED-47).
+- **Limitación conocida, documentada en el propio código**: confirmar la orden, facturar/
+  contabilizar y registrar el evento de deduplicación del webhook no son atómicos entre sí
+  (`SalesOrderService.confirm`/`InvoiceService.*` no exponen `_skip_commit`) — un reintento
+  legítimo de la pasarela tras una caída a medio proceso chocaría con `ConflictError` (AMB-04).
+- Sin notificación transaccional al cliente externo en la confirmación de pago — `notifications`
+  (módulo 26) solo cubre `User` interno, no `Contact` externo; el diseño original asumía
+  incorrectamente que aplicaba el mismo patrón que `medical` → `notifications` (módulo 14).
+- Contrato: 9 rutas nuevas (126 totales, 117 previas + 9). 8 tests backend + 1 test de integración
+  frontend, escritos sin correr.
+- **Módulo 23 (ecommerce) — Fases 1 y 3 escritas. Verificación externa vía CI pendiente al
+  momento de esta reconstrucción** (ver STATE.md para el estado más actual).
+
+---
+
+---
+
+## MÓDULO 24 — `reports`, Transversal (reconstruido de STATE.md)
+
+Exportación de Datos [core] a XLSX/PDF — primer módulo del proyecto con dependencias Python
+nuevas (`openpyxl`, `reportlab`), tampoco instaladas/verificadas en el entorno de escritura.
+
+- Dashboards Interactivos con widgets embebidos en JSONB (`Dashboard.widgets`), no una tabla
+  `DashboardWidget` separada (DED-50).
+- Reportes Cruzados implementado como whitelist fija de 4 métricas predefinidas
+  (`app/reports/metrics.py`), nunca SQL arbitrario desde el cliente (DED-51) — un Report Builder
+  real queda [extendido], no construido.
+- Gating con `require_package("administrative")` completo, no exento como `notifications` — decisión
+  tomada, no solo propuesta, pendiente de confirmar con Roberto (AMB-05).
+- Descargas reutilizan `apiDownloadFile` ya existente en `lib/api-client.ts` (mismo mecanismo que
+  adjuntos de `medical`), sin inventar un mecanismo nuevo. Sin test de integración de frontend
+  escrito — recorte de alcance explícito por tiempo.
+- Contrato: rutas nuevas del módulo (ver STATE.md para el conteo exacto tras congelar). 10 tests
+  backend, escritos sin correr.
+- **Módulo 24 (reports) — Fases 1 y 3 escritas. Verificación externa pendiente al momento de esta
+  reconstrucción.**
+
+---
+
+---
+
+
+
+Primer módulo del paquete Farmacéutico. Elegido siguiendo el orden de la tabla una vez que
+Médico completó sus 6 módulos construibles y el módulo 15 (reserva pública) quedó confirmado
+bloqueado por `website`.
+
+- **FEFO real, implementado por primera vez en el proyecto.** `inventory` (módulo 3) lo había
+  dejado explícitamente fuera de su propio cierre — su docstring lo declara TODO. `pharmacy`
+  consume las primitivas ya reales de `inventory` (`Lot.expiry_date`, `StockLevel`,
+  `StockService.ship`) para implementar la selección: ordena por `expiry_date ASC NULLS LAST` y
+  consume greedy hasta cubrir la cantidad pedida, generando una `DispensationLine` por cada lote
+  tocado — sin modificar el módulo 3 ya cerrado y con sus propios tests pasando.
+- Sustancias Controladas: tabla propia de `pharmacy` (`ControlledSubstanceProduct`, FK a
+  `inventory.Product`) en vez de agregar una columna al esquema de un módulo ajeno ya cerrado.
+  Libro de registro append-only generado automáticamente cuando una línea de dispensación
+  corresponde a un producto marcado.
+- POS Farmacia reutiliza la misma `DispensationOrder` que la dispensación con receta — una venta
+  de mostrador es, estructuralmente, una dispensación con `prescription_id=NULL` más los campos
+  de cobro. Crear una segunda entidad casi idéntica habría duplicado toda la lógica de FEFO/
+  verificación/sustancias controladas sin necesidad real.
+- Verificación Clínica: si `medical` está activo, se reutiliza `ClinicalRecordService.
+  list_for_patient` (mismo patrón de reuso cruzado que `medical` llamando a
+  `accounting`/`notifications`) para traer las alergias reales; si no, se exige el formulario
+  mínimo que la spec pide explícitamente.
+- Migración con RLS+grants sobre 4 tablas nuevas. `tests/test_pharmacy_module.py`: 11 tests,
+  capa de servicio directa (mismo patrón que `sales`/`medical`) — FEFO consume el lote que vence
+  antes, se divide automáticamente entre dos lotes cuando uno no alcanza, stock insuficiente →
+  409, formulario de alergias obligatorio sin `medical`, receta requiere `medical` activo, venta
+  de mostrador con cobro registrado, sustancia controlada genera entrada en el libro (y una NO
+  controlada no genera nada), anular no restituye stock + guardia de doble-anulación, orden
+  inexistente → 404, aislamiento RLS cross-tenant. **Los 11 pasaron al primer intento.**
+- Contrato re-congelado a 114 rutas (107+7).
+- **Hallazgo real de Fase 3 (frontend) — encontrado reproduciendo con `curl`, no ajustando el
+  test a ciegas**: el primer intento de dispensar desde la UI fallaba sin ningún error visible en
+  pantalla. En vez de seguir iterando sobre el test, se replicó la misma petición directo contra
+  el backend con `curl` — y ahí apareció el error real: `medical` estaba activo para la compañía
+  de prueba compartida, así que `pharmacy` intentaba consultar el expediente clínico del cliente
+  para chequear alergias — pero ese cliente de mostrador no tenía `is_patient=true` (correcto,
+  por diseño — DED-48), y `ClinicalRecordService` exige ese flag, devolviendo un 422 que el
+  frontend nunca llegó a mostrarle claramente al usuario de la prueba. Se corrigió la condición:
+  el chequeo contra el expediente médico ahora exige `medical` activo **y**
+  `patient.is_patient=true`; en cualquier otro caso —incluido `medical` activo pero el contacto
+  sin ese flag— cae al formulario mínimo de alergias.
+- **Efecto colateral real, no una regresión**: activar el paquete `pharmacy` en la compañía de
+  prueba compartida (necesario para poder probar el módulo nuevo desde la UI) cambió el
+  `dispensing_status` de una receta recién emitida en el test de `medical` de `not_applicable` a
+  `pending` (comportamiento correcto según DED-30, ya que ahora sí hay un paquete `pharmacy` que
+  podría dispensarla) — se actualizó esa aserción para reflejar el estado real del fixture actual,
+  documentado in situ para que quede claro que no fue una regresión sino un cambio de estado
+  esperado.
+- Frontend: `PharmacyPage.tsx` — sección de dispensación/POS con líneas dinámicas de medicamento
+  (con o sin receta externa), y sección de sustancias controladas (marcar/desmarcar + libro de
+  registro visible bajo demanda). `PharmacyPage.integration.test.tsx`: flujo completo con dos
+  lotes reales de vencimiento distinto, verificando contra el backend cuál lote se consumió
+  (FEFO), más marcar un producto como controlado y confirmar que la segunda dispensación generó
+  una entrada real en el libro de registro.
+- `npx tsc --noEmit` y `npm run build`: limpios. `pytest tests/` final desde una base recreada de
+  cero (18 migraciones): **112/112**.
+- **Módulo 16 (pharmacy — dispensación + verificación clínica) cerrado — Fases 1-4 completas.**
+  Primer módulo del paquete Farmacéutico. Quedan del mismo paquete: Interacciones, Aseguradoras/
+  Copagos, Reposición a Droguerías y MTM (módulos 17-21, todos `[extendido]`).
+
+---
+
 ## Limitaciones de red del sandbox, documentadas explícitamente durante el proyecto
 - `ui.shadcn.com` no disponible → componentes UI escritos a mano sobre Radix.
 - `cdn.playwright.dev` no disponible → Vitest+jsdom como sustituto de E2E real en navegador

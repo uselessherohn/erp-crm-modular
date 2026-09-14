@@ -26,3 +26,4 @@ from app.notifications import models as notifications_models  # noqa: F401
 from app.website import models as website_models  # noqa: F401
 from app.ecommerce import models as ecommerce_models  # noqa: F401
 from app.reports import models as reports_models  # noqa: F401
+from app.pharmacy import models as pharmacy_models  # noqa: F401

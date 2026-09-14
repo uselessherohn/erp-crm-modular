@@ -151,6 +151,10 @@ async def bootstrap():
             models.Permission(code="reports:dashboard:read", description="Ver un dashboard"),
             models.Permission(code="reports:dashboard:update", description="Editar un dashboard"),
             models.Permission(code="reports:dashboard:delete", description="Eliminar un dashboard"),
+            models.Permission(code="pharmacy:dispensation:create", description="Dispensar / vender en mostrador / anular"),
+            models.Permission(code="pharmacy:dispensation:read", description="Ver dispensaciones"),
+            models.Permission(code="pharmacy:controlled_substance:manage", description="Marcar/desmarcar sustancias controladas"),
+            models.Permission(code="pharmacy:controlled_substance:read-log", description="Ver libro de sustancias controladas"),
         ]
         db.add_all(perms)
         await db.flush()
@@ -190,6 +194,7 @@ async def bootstrap():
         # error explícito hasta entonces, ver
         # EcommerceSettingsService.get_or_raise).
         db.add(ecommerce_models.EcommerceSettings(company_id=company_id, webhook_secret=secrets.token_hex(32)))
+        db.add(models.CompanyPackage(company_id=company_id, package="pharmacy", status="active"))
 
         await db.commit()
         print("bootstrap ok — user_id:", user.id, "role_id:", role.id)

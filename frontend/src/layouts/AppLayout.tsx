@@ -3,7 +3,7 @@ import { useCurrentUser, useLogout } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
 import { cn } from "@/lib/utils";
-import { Users, ShieldCheck, LogOut, Contact, Package, Warehouse, Boxes, ClipboardList, Tags, FileText, ShoppingCart, Landmark, Receipt, Wallet, FileMinus, GitBranch, IdCard, Stethoscope, MessageSquare, Globe, Store, BarChart3 } from "lucide-react";
+import { Users, ShieldCheck, LogOut, Contact, Package, Warehouse, Boxes, ClipboardList, Tags, FileText, ShoppingCart, Landmark, Receipt, Wallet, FileMinus, GitBranch, IdCard, Stethoscope, MessageSquare, Globe, Store, BarChart3, Pill } from "lucide-react";
 
 // El menú se muestra igual para todos los usuarios autenticados — el
 // backend ya aplica RBAC (403 si falta el permiso); no duplicamos esa
@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { to: "/pipeline", label: "Pipeline", icon: GitBranch },
   { to: "/employees", label: "Recursos Humanos", icon: IdCard },
   { to: "/medical", label: "Médico", icon: Stethoscope },
+  { to: "/pharmacy", label: "Farmacia", icon: Pill },
   { to: "/notifications-admin", label: "Notificaciones", icon: MessageSquare },
   { to: "/website", label: "Sitio Web", icon: Globe },
   { to: "/ecommerce", label: "Ecommerce", icon: Store },
