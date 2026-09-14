@@ -144,6 +144,13 @@ async def bootstrap():
             models.Permission(code="website:form_submission:read", description="Ver un envío de formulario de captación"),
             models.Permission(code="ecommerce:settings:read", description="Ver configuración de ecommerce"),
             models.Permission(code="ecommerce:settings:update", description="Crear/editar configuración de ecommerce"),
+            models.Permission(code="reports:metric:read", description="Ver datos de métricas de reportes"),
+            models.Permission(code="reports:export:run", description="Exportar métricas a CSV/XLSX/PDF"),
+            models.Permission(code="reports:dashboard:create", description="Crear dashboards"),
+            models.Permission(code="reports:dashboard:list", description="Listar dashboards"),
+            models.Permission(code="reports:dashboard:read", description="Ver un dashboard"),
+            models.Permission(code="reports:dashboard:update", description="Editar un dashboard"),
+            models.Permission(code="reports:dashboard:delete", description="Eliminar un dashboard"),
         ]
         db.add_all(perms)
         await db.flush()

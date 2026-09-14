@@ -198,6 +198,12 @@ existe todavía en el repo.
 
 ## 3. Módulo 24 — `reports`
 
+> **Implementado** en un cierre posterior a este documento — ver
+> `STATE.md`, sección `reports (módulo 24)`, para el contrato real y qué
+> quedó verificado vs no. El gating quedó decidido (no solo propuesto)
+> como `require_package("administrative")` completo — ver AMB-05 en
+> `STATE.md`, sigue sin confirmación de Roberto.
+
 **Depende de**: "los módulos ya construidos que quiera cruzar, no de una
 lista fija" (JSON, nota explícita) — a diferencia de todo lo demás, no tiene
 un grafo de dependencia obligatoria fijo.

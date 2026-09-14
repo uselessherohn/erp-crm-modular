@@ -50,7 +50,7 @@ es transparente a nivel de API).
 - Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (— bloqueado por `website`)
 - Farmacéutico: (—) todos
 - Web: website (△ Backend + frontend escritos, Fases 1 y 3 — **NO verificado**: sin Postgres/red/Node en el entorno donde se escribió, ver sección dedicada abajo), ecommerce (△ ídem — backend completo + configuración de panel interno, storefront público es un frontend separado fuera de alcance de este panel, ver sección dedicada abajo)
-- Transversal: reports (—), audit completo (—), notifications (✓ Completo — Fases 1-4 completas)
+- Transversal: reports (△ Backend + frontend escritos — **NO verificado**, ver sección dedicada abajo), audit completo (— no construido, ver `diseno_modulos_22_25_erp_crm.md` sección 4), notifications (✓ Completo — Fases 1-4 completas)
 
 ## 2. Contratos públicos vigentes (NO redefinir)
 
@@ -945,6 +945,68 @@ spec 7.1) — **Fases 1-4 completas**
   motivo que `website-temp-contract.ts`). `EcommercePage.integration.test.tsx`
   escrito, **NO ejecutado**.
 
+### `reports` (módulo 24) — △ ESCRITO, NO VERIFICADO
+
+> Misma advertencia que `website`/`ecommerce` arriba. Checklist de cierre
+> real: `pip install openpyxl reportlab` (dependencias nuevas, ver
+> `requirements.txt` — **tampoco instaladas/verificadas** en este
+> entorno), migrar (`57990ab9bc72`), correr
+> `pytest tests/test_reports_module.py`, congelar contrato + codegen real
+> (borrar `frontend/src/lib/reports-temp-contract.ts`), `npm run build`.
+> Sin test de integración de frontend para esta página (a diferencia de
+> `website`/`ecommerce`) — recorte explícito de alcance de este cierre por
+> tiempo, no un olvido.
+
+- **Rutas nuevas: 8** (134 rutas totales, 126 previas + 8):
+  `GET /reports/metrics`, `GET /reports/metrics/{key}/data`,
+  `GET /reports/metrics/{key}/export`,
+  `POST/GET /reports/dashboards`, `GET/PATCH/DELETE /reports/dashboards/{id}`.
+- **DEDUCIBLE**: "Dashboards Interactivos" se modeló con los widgets
+  embebidos en una columna JSONB de `Dashboard` (`widgets: list[dict]`),
+  no como una tabla `DashboardWidget` separada — spec no especifica la
+  granularidad; alcanza para dashboards con varios widgets sin el costo
+  de un CRUD anidado completo.
+- **"Reportes Cruzados" implementado como whitelist de 4 métricas
+  predefinidas** (`app/reports/metrics.py`), nunca SQL arbitrario desde
+  el cliente (spec 5): `sales_by_customer`, `top_products_by_revenue`,
+  `accounts_receivable_open`, `stock_by_warehouse`. Cada consulta filtra
+  `company_id` explícito en el SQL, no solo confía en RLS (un `GROUP BY`
+  con un JOIN mal filtrado sería un fallo silencioso de aislamiento entre
+  compañías mucho más difícil de notar que en una consulta de un solo
+  registro — segunda capa de defensa, no la única).
+- **Gating de paquete**: `require_package("administrative")` completo,
+  sin `minimal_module` — decisión tomada (no solo propuesta) porque
+  `reports` es una capa de negocio sobre datos del Administrativo, a
+  diferencia de `notifications` (infraestructura transversal, exenta de
+  gating). **AMBIGUO, no confirmado por Roberto** — ver AMB-05 abajo.
+- **TODO explícito, fuera de alcance de este cierre**: ninguna métrica
+  cruza `medical`/`pharmacy` — cruzar esos paquetes exigiría validar el
+  paquete de origen de cada dominio tocado antes de exponer el resultado
+  (`diseno_modulos_22_25_erp_crm.md` sección 3.1), no solo el paquete
+  `administrative` que gatea el router en general.
+- **Exportación**: CSV con stdlib (`csv`, sin dependencia nueva); XLSX vía
+  `openpyxl`; PDF vía `reportlab` con una tabla simple (`Table`/
+  `SimpleDocTemplate`) — ambos agregados a `requirements.txt`, sin
+  instalar/verificar en este entorno. Los tres formatos generan el
+  archivo completo en memoria antes de responder (sin streaming) —
+  aceptable con el `LIMIT 50` de la métrica más grande; si una métrica
+  futura puede devolver miles de filas, esto necesita revisarse.
+- No se agregaron permisos nuevos al bootstrap más allá de los propios
+  del módulo (`reports:metric:read`, `reports:export:run`,
+  `reports:dashboard:*`) — El Roble ya tenía `administrative` con compra
+  completa, así que no hizo falta tocar `company_packages`.
+- 12 tests backend escritos (`test_reports_module.py`, incluye los 3 de
+  exportación que dependen de `openpyxl`/`reportlab` sin instalar) —
+  **NO ejecutados**.
+- Frontend: `ReportsPage.tsx` (explorador de métricas con rango de
+  fechas + exportación, y sección de dashboards) + `hooks/use-reports.ts`.
+  Reutiliza `apiDownloadFile` ya existente en `lib/api-client.ts` (mismo
+  mecanismo que la descarga de adjuntos de `medical`) para las
+  descargas — no se inventó un mecanismo nuevo. Usa
+  `frontend/src/lib/reports-temp-contract.ts` (shim temporal, mismo
+  motivo que los anteriores). **Sin test de integración escrito** para
+  esta página — recorte de alcance explícito por tiempo.
+
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
   producto. Datos de prueba truncados al cerrar cada fase.)
@@ -1008,6 +1070,9 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-48 | #23 ecommerce | DEDUCIBLE | `EcommerceSettings` (nueva, no anticipada en el diseño) resuelve la falta de un almacén "por defecto" en `inventory.Warehouse` — checkout falla explícito si no está configurada. | Abierto — pendiente confirmación de Roberto sobre si el almacén debería poder variar por región/método de envío en vez de ser uno solo por compañía |
 | DED-49 | #23 ecommerce | DEDUCIBLE | Verificación de webhook con HMAC-SHA256 + secreto propio por compañía, contrato de payload simplificado — no se integró ningún SDK de pasarela real. | Abierto — bloqueante real antes de producción, depende de qué pasarela(s) elija Roberto |
 | AMB-04 | #23 ecommerce | AMBIGUO | Confirmar/facturar/registrar evento de pago no son atómicos entre sí (`SalesOrderService.confirm`/`InvoiceService.*` no exponen `_skip_commit`) — riesgo de `ConflictError` en un reintento de webhook tras una caída a medio proceso. | Abierto — requiere extender esos servicios, fuera del alcance de este cierre |
+| DED-50 | #24 reports | DEDUCIBLE | "Dashboards Interactivos" con widgets embebidos en JSONB (`Dashboard.widgets`), no una tabla `DashboardWidget` separada. | Documentado, no requiere confirmación — extensión aditiva si hace falta más estructura |
+| DED-51 | #24 reports | DEDUCIBLE | "Reportes Cruzados" implementado como whitelist fija de 4 métricas predefinidas (`app/reports/metrics.py`), nunca SQL arbitrario desde el cliente. | Abierto — Roberto podría querer métricas adicionales o un Report Builder real ([extendido], no construido) |
+| AMB-05 | #24 reports | AMBIGUO | Gating de `reports` con `require_package("administrative")` completo (no exento como `notifications`) — decisión tomada, no solo propuesta, pero no confirmada por Roberto. | Abierto — pendiente confirmación de Roberto |
 
 ## 5. Resumen rodante (solo los últimos 3 módulos cerrados)
 - Módulo 14 (medical — portal/mensajería paciente-médico) — **Fases 1-4

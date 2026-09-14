@@ -21,6 +21,7 @@ import { MedicalPage } from "@/pages/MedicalPage";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { WebsitePage } from "@/pages/WebsitePage";
 import { EcommercePage } from "@/pages/EcommercePage";
+import { ReportsPage } from "@/pages/ReportsPage";
 import { AppLayout } from "@/layouts/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
@@ -65,6 +66,7 @@ export function App() {
             <Route path="/notifications-admin" element={<NotificationsPage />} />
             <Route path="/website" element={<WebsitePage />} />
             <Route path="/ecommerce" element={<EcommercePage />} />
+            <Route path="/reports" element={<ReportsPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/roles" element={<RolesPage />} />
           </Route>

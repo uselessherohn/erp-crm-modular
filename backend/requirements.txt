@@ -15,3 +15,8 @@ python-jose==3.5.0
 python-multipart==0.0.20
 SQLAlchemy==2.0.52
 uvicorn==0.52.4
+# Agregados en el cierre del módulo 24 (reports) — Exportación de Datos
+# [core] a XLSX/PDF. NO instalados/verificados en el entorno donde se
+# escribió este módulo (sin red — ver STATE.md, sección `reports`).
+openpyxl==3.1.5
+reportlab==4.2.5
