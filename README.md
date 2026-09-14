@@ -92,8 +92,8 @@ npx vitest run       # suite de integración real contra el backend de arriba
   `LOG_EJECUCION.md`. Es la bitácora cronológica completa, módulo por
   módulo, fase por fase.
 - **¿Quieres el contrato de API vigente?** → `contracts/openapi.json`
-  (pendiente de re-congelar por el job `e2e` del CI tras este merge —
-  ver `STATE.md` para el conteo por módulo mientras tanto).
+  (134 rutas / 168 operaciones al momento de este corte, congelado
+  automáticamente por el job `e2e` del CI contra el servidor real).
 - **¿Quieres la tabla de módulos y dependencias del sistema completo?** →
   `modulos_erp_crm_v10_4.json` (26 módulos totales planeados).
 

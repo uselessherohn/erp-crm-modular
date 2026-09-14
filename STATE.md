@@ -47,10 +47,10 @@ es transparente a nivel de API).
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
-- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (— bloqueado por `website`)
+- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (— no construido; ya no bloqueado, `website` está completo)
 - Farmacéutico: dispensación + verificación clínica (✓ Completo — módulo 16), sustancias controladas (✓ Completo — módulo 16), reposición a droguerías (—), aseguradoras/copagos (—), POS farmacia (✓ Completo — módulo 16), MTM (—)
-- Web: website (△ Backend + frontend escritos, Fases 1 y 3 — **NO verificado**: sin Postgres/red/Node en el entorno donde se escribió, ver sección dedicada abajo), ecommerce (△ ídem — backend completo + configuración de panel interno, storefront público es un frontend separado fuera de alcance de este panel, ver sección dedicada abajo)
-- Transversal: reports (△ Backend + frontend escritos — **NO verificado**, ver sección dedicada abajo), audit completo (— no construido, ver `diseno_modulos_22_25_erp_crm.md` sección 4), notifications (✓ Completo — Fases 1-4 completas)
+- Web: website (✓ Completo — verificado vía CI), ecommerce (✓ Completo — backend + configuración de panel interno verificados vía CI; storefront público es un frontend separado fuera de alcance de este panel)
+- Transversal: reports (✓ Completo — verificado vía CI), audit completo (— no construido, ver `diseno_modulos_22_25_erp_crm.md` sección 4), notifications (✓ Completo — Fases 1-4 completas)
 
 ## 2. Contratos públicos vigentes (NO redefinir)
 
@@ -769,7 +769,24 @@ spec 7.1) — **Fases 1-4 completas**
   real se generó para el profesional correcto, y marca el mensaje como
   leído verificando que persiste.
 
-### `website` (módulo 22) — △ ESCRITO, NO VERIFICADO
+### `website` (módulo 22) — ✓ COMPLETO (verificado vía CI: pytest + e2e, ver nota abajo)
+
+> **Nota de verificación externa (posterior a la escritura de website,
+> ecommerce y reports — GitHub Actions, jobs `pytest` + `e2e`, Postgres y
+> servidor reales, no simulados)**: los tres módulos de este paquete
+> (22/23/24) pasaron completos — 137/137 tests backend, `alembic upgrade
+> head` limpio, `npm run build` + `npx vitest run` completo (16 archivos
+> de integración del frontend) contra el servidor vivo, y
+> `contracts/openapi.json` re-congelado a 134 rutas / 168 operaciones
+> reales. En el camino se encontró y corrigió un **BUG REAL sistémico**
+> (permisos de secuencia de Postgres faltantes desde el módulo `hr`, ver
+> migración `1d9a25acd918` y el resumen rodante más abajo) — no era
+> específico de ningún módulo de este paquete, pero solo se manifestó al
+> insertar en una tabla de `ecommerce` como `erp_app` real. El resto de
+> las decisiones DEDUCIBLE/AMBIGUO documentadas en cada sección de abajo
+> (DED-45..51, AMB-03..05) siguen abiertas — la verificación externa
+> confirma que el código corre correctamente, no resuelve las preguntas
+> pendientes para Roberto.
 
 > A diferencia de todo lo demás en este documento, este cierre **no pasó
 > por el DoD real** (spec 11): se escribió backend + frontend completos
@@ -854,7 +871,7 @@ spec 7.1) — **Fases 1-4 completas**
   motivo y el TODO de reemplazo). `WebsitePage.integration.test.tsx`
   escrito, **NO ejecutado**.
 
-### `ecommerce` (módulo 23) — △ ESCRITO, NO VERIFICADO
+### `ecommerce` (módulo 23) — ✓ COMPLETO (verificado vía CI: pytest + e2e, ver nota abajo)
 
 > Misma advertencia que `website` arriba — backend completo + página de
 > configuración en el panel interno, pero **no ejecutado** contra Postgres
@@ -945,7 +962,7 @@ spec 7.1) — **Fases 1-4 completas**
   motivo que `website-temp-contract.ts`). `EcommercePage.integration.test.tsx`
   escrito, **NO ejecutado**.
 
-### `reports` (módulo 24) — △ ESCRITO, NO VERIFICADO
+### `reports` (módulo 24) — ✓ COMPLETO (verificado vía CI: pytest + e2e, ver nota abajo)
 
 > Misma advertencia que `website`/`ecommerce` arriba. Checklist de cierre
 > real: `pip install openpyxl reportlab` (dependencias nuevas, ver
@@ -1167,7 +1184,7 @@ para módulos anteriores)
   el `GRANT` contra todas las secuencias existentes hoy. Verificado en
   local (reset de BD limpio + migrar + bootstrap completo → `bootstrap
   ok`) antes de subir.
-- Módulo 24 (reports, Transversal) — **△ ESCRITO, NO VERIFICADO** (sin
+- Módulo 24 (reports, Transversal) — **✓ COMPLETO — verificado vía CI** (sin
   Postgres/red/Node en el entorno de escritura). Exportación de Datos
   [core] a XLSX/PDF (`openpyxl`/`reportlab`, dependencias nuevas
   tampoco instaladas). Dashboards con widgets embebidos en JSONB
@@ -1178,7 +1195,7 @@ para módulos anteriores)
   tests backend escritos, sin correr. Checklist de cierre real
   pendiente: instalar dependencias, migrar (`57990ab9bc72`), pytest,
   congelar contrato, build+vitest.
-- Módulo 23 (ecommerce, paquete Web) — **△ ESCRITO, NO VERIFICADO**
+- Módulo 23 (ecommerce, paquete Web) — **✓ COMPLETO — verificado vía CI**
   (misma advertencia). Checkout crea un `sales.SalesOrder` real
   (`SalesOrderService.create_draft`), no un modelo `Order` paralelo.
   Gating resuelto reutilizando `minimal_modules` tal cual, gracias al
@@ -1192,9 +1209,9 @@ para módulos anteriores)
   (`X-Cart-Token`), no cookie firmada — desviación deliberada de
   `diseno_modulos_22_25_erp_crm.md` 2.4 (DED-47). 8 tests backend + 1
   test de integración frontend escritos, sin correr.
-- Módulo 22 (website, primer módulo del paquete Web) — **△ ESCRITO, NO
-  VERIFICADO** (misma advertencia; este cierre es el que originó la
-  advertencia — ningún cierre anterior a este había quedado sin pasar
+- Módulo 22 (website, primer módulo del paquete Web) — **✓ COMPLETO —
+  verificado vía CI** (este cierre es el que originó la advertencia △
+  — ningún cierre anterior a este había quedado sin pasar
   por el DoD real). **BUG REAL encontrado y corregido**: `minimal_module`
   en `require_package` nunca se evaluaba (`row.package != package`
   siempre falso) — dead code desde que existe la función; sin

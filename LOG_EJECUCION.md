@@ -1199,6 +1199,40 @@ nuevas (`openpyxl`, `reportlab`), tampoco instaladas/verificadas en el entorno d
 
 ---
 
+## Verificación externa vía CI — cierre de website(22) + ecommerce(23) + reports(24) + pharmacy(16)
+
+Las tres entradas reconstruidas de arriba (22/23/24) y la de pharmacy (16) quedaron marcadas
+pendientes o parcialmente verificadas en su momento. Tras mergear las dos líneas de trabajo
+paralelas (ver el merge commit de `main`), el CI (GitHub Actions, jobs `pytest` + `e2e`, Postgres
+y servidor reales) corrió la suite completa sobre el árbol combinado:
+
+- `alembic upgrade head` falló la primera vez: **dos heads de Alembic** (website/ecommerce/reports
+  y pharmacy declararon migraciones independientes sobre el mismo `down_revision`, por trabajarse
+  en paralelo) — resuelto con una migración de merge estándar (`d016d0daa072`).
+- Con un solo head, `alembic upgrade head` volvió a fallar en el job `e2e`, esta vez en
+  `bootstrap_admin.py`: `permission denied for sequence ecommerce_settings_id_seq`.
+  **BUG REAL sistémico, no solo de ecommerce** — diagnosticado reproduciendo todo el flujo en
+  local (Postgres instalado ad-hoc en el entorno de chat, porque el log del job en GitHub Actions
+  vive en Azure Blob Storage y no es accesible desde ahí): el `GRANT USAGE, SELECT ON ALL
+  SEQUENCES IN SCHEMA public TO erp_app` de la migración inicial (`1483b27d4cff`) solo cubre
+  secuencias existentes en ese momento; ninguna migración desde `hr` (módulo 8) en adelante volvió
+  a otorgar el `USAGE` sobre sus propias secuencias nuevas — nunca se había detectado porque
+  ningún test de `pytest` había insertado como `erp_app` real en una tabla posterior a `hr` por
+  este camino exacto. Corregido en `1d9a25acd918` (re-otorga el `GRANT` contra todas las
+  secuencias existentes hoy) y confirmado en local antes de subir.
+- Con ambos fixes: **pytest 137/137**, `npm run build` + `npx vitest run` completo (16 archivos de
+  integración del frontend) contra el servidor real, `contracts/openapi.json` re-congelado
+  automáticamente a **134 rutas / 168 operaciones**.
+- website(22), ecommerce(23) y reports(24) pasan de `△ ESCRITO, NO VERIFICADO` a `✓ COMPLETO` en
+  `STATE.md`. Las decisiones DEDUCIBLE/AMBIGUO documentadas en cada cierre (DED-45..51,
+  AMB-03..05) siguen abiertas — esta verificación confirma que el código corre, no resuelve las
+  preguntas pendientes para Roberto.
+
+---
+
+---
+
+
 
 
 Primer módulo del paquete Farmacéutico. Elegido siguiendo el orden de la tabla una vez que
