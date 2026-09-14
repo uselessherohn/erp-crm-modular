@@ -1832,6 +1832,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pharmacy/dispensations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Dispensation */
+        post: operations["create_dispensation_pharmacy_dispensations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/dispensations/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dispensation */
+        get: operations["get_dispensation_pharmacy_dispensations__order_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/patients/{patient_contact_id}/dispensations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Dispensations For Patient */
+        get: operations["list_dispensations_for_patient_pharmacy_patients__patient_contact_id__dispensations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/dispensations/{order_id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Void Dispensation */
+        post: operations["void_dispensation_pharmacy_dispensations__order_id__void_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/controlled-substances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Controlled Substances */
+        get: operations["list_controlled_substances_pharmacy_controlled_substances_get"];
+        put?: never;
+        /** Mark Controlled Substance */
+        post: operations["mark_controlled_substance_pharmacy_controlled_substances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/controlled-substances/{product_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unmark Controlled Substance */
+        delete: operations["unmark_controlled_substance_pharmacy_controlled_substances__product_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/controlled-substances/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Controlled Substance Log */
+        get: operations["list_controlled_substance_log_pharmacy_controlled_substances_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1936,6 +2056,11 @@ export interface components {
          * @enum {string}
          */
         ActivityTypeEnum: "call" | "email" | "meeting" | "note" | "task";
+        /**
+         * AllergyCheckSourceEnum
+         * @enum {string}
+         */
+        AllergyCheckSourceEnum: "medical_record" | "form";
         /** AppointmentCancel */
         AppointmentCancel: {
             /** Cancellation Reason */
@@ -2321,6 +2446,43 @@ export interface components {
             /** Is Active */
             is_active?: boolean | null;
         };
+        /** ControlledSubstanceLogEntryRead */
+        ControlledSubstanceLogEntryRead: {
+            /** Id */
+            id: number;
+            /** Dispensation Line Id */
+            dispensation_line_id: number;
+            /** Product Id */
+            product_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Dispensed By */
+            dispensed_by: number;
+            /** Quantity */
+            quantity: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ControlledSubstanceMark */
+        ControlledSubstanceMark: {
+            /** Product Id */
+            product_id: number;
+        };
+        /** ControlledSubstanceProductRead */
+        ControlledSubstanceProductRead: {
+            /** Id */
+            id: number;
+            /** Product Id */
+            product_id: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** CreditDebitNoteCreate */
         CreditDebitNoteCreate: {
             note_type: components["schemas"]["NoteTypeEnum"];
@@ -2455,6 +2617,91 @@ export interface components {
          * @enum {string}
          */
         DirectionEnum: "sale" | "purchase";
+        /** DispensationLineRead */
+        DispensationLineRead: {
+            /** Id */
+            id: number;
+            /** Product Id */
+            product_id: number;
+            /** Lot Id */
+            lot_id: number | null;
+            /** Quantity */
+            quantity: string;
+        };
+        /** DispensationLineRequest */
+        DispensationLineRequest: {
+            /** Product Id */
+            product_id: number;
+            /** Quantity */
+            quantity: number | string;
+        };
+        /** DispensationOrderCreate */
+        DispensationOrderCreate: {
+            /** Warehouse Id */
+            warehouse_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Prescription Id */
+            prescription_id?: number | null;
+            /** Walk In Reference */
+            walk_in_reference?: string | null;
+            /** Allergy Check Notes */
+            allergy_check_notes?: string | null;
+            /** Payment Method */
+            payment_method?: string | null;
+            /** Amount Charged */
+            amount_charged?: number | string | null;
+            /** Lines */
+            lines: components["schemas"]["DispensationLineRequest"][];
+        };
+        /** DispensationOrderRead */
+        DispensationOrderRead: {
+            /** Id */
+            id: number;
+            /** Company Id */
+            company_id: number;
+            /** Warehouse Id */
+            warehouse_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Dispensed By */
+            dispensed_by: number;
+            /** Document Number */
+            document_number: string;
+            /** Prescription Id */
+            prescription_id: number | null;
+            /** Walk In Reference */
+            walk_in_reference: string | null;
+            allergy_check_source: components["schemas"]["AllergyCheckSourceEnum"];
+            /** Allergy Check Notes */
+            allergy_check_notes: string | null;
+            /** Payment Method */
+            payment_method: string | null;
+            /** Amount Charged */
+            amount_charged: string | null;
+            status: components["schemas"]["DispensationStatusEnum"];
+            /** Voided At */
+            voided_at: string | null;
+            /** Void Reason */
+            void_reason: string | null;
+            /**
+             * Dispensed At
+             * Format: date-time
+             */
+            dispensed_at: string;
+            /** Lines */
+            lines: components["schemas"]["DispensationLineRead"][];
+        };
+        /**
+         * DispensationStatusEnum
+         * @enum {string}
+         */
+        DispensationStatusEnum: "dispensed" | "voided";
+        /** DispensationVoid */
+        DispensationVoid: {
+            /** Void Reason */
+            void_reason: string;
+        };
         /** DocumentAccountMappingCreate */
         DocumentAccountMappingCreate: {
             document_type: components["schemas"]["DocumentTypeEnum"];
@@ -8339,6 +8586,272 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_dispensation_pharmacy_dispensations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispensationOrderCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispensationOrderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dispensation_pharmacy_dispensations__order_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                order_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispensationOrderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_dispensations_for_patient_pharmacy_patients__patient_contact_id__dispensations_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                patient_contact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispensationOrderRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    void_dispensation_pharmacy_dispensations__order_id__void_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                order_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispensationVoid"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispensationOrderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_controlled_substances_pharmacy_controlled_substances_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlledSubstanceProductRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_controlled_substance_pharmacy_controlled_substances_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlledSubstanceMark"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlledSubstanceProductRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_controlled_substance_pharmacy_controlled_substances__product_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                product_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_controlled_substance_log_pharmacy_controlled_substances_log_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlledSubstanceLogEntryRead"][];
                 };
             };
             /** @description Validation Error */

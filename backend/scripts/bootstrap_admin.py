@@ -132,6 +132,10 @@ async def bootstrap():
             models.Permission(code="medical:message:create", description="Enviar mensaje a/de paciente"),
             models.Permission(code="medical:message:read-own-patients", description="Ver mensajes de pacientes propios"),
             models.Permission(code="medical:message:read-all", description="Ver mensajes de cualquier paciente"),
+            models.Permission(code="pharmacy:dispensation:create", description="Dispensar / vender en mostrador / anular"),
+            models.Permission(code="pharmacy:dispensation:read", description="Ver dispensaciones"),
+            models.Permission(code="pharmacy:controlled_substance:manage", description="Marcar/desmarcar sustancias controladas"),
+            models.Permission(code="pharmacy:controlled_substance:read-log", description="Ver libro de sustancias controladas"),
         ]
         db.add_all(perms)
         await db.flush()
@@ -159,6 +163,7 @@ async def bootstrap():
         # que se documentó en el cierre de `pipeline`.
         db.add(models.CompanyPackage(company_id=company_id, package="administrative", status="active"))
         db.add(models.CompanyPackage(company_id=company_id, package="medical", status="active"))
+        db.add(models.CompanyPackage(company_id=company_id, package="pharmacy", status="active"))
 
         await db.commit()
         print("bootstrap ok — user_id:", user.id, "role_id:", role.id)

@@ -184,14 +184,16 @@ describe("MedicalPage — flujo real de medical contra backend en 127.0.0.1:8000
 
     await waitFor(() => expect(within(dialog).getByText(new RegExp(medicationName))).toBeInTheDocument(), { timeout: 10000 });
 
-    // Verificación real: sin paquete 'pharmacy' activo para esta compañía
-    // de prueba, dispensing_status debe caer en 'not_applicable' (DED-30).
+    // Verificación real: con el paquete 'pharmacy' activo para esta
+    // compañía de prueba (desde el cierre del módulo 16), dispensing_
+    // status debe caer en 'pending' (DED-30) — todavía no se dispensó
+    // desde `pharmacy`, solo se emitió la receta acá.
     const prescriptions = await apiRequest<Array<{ consultation_id: number; lines: Array<{ medication_name: string; dispensing_status: string }> }>>(
       `/medical/patients/${patientId}/prescriptions`
     );
     const prescription = prescriptions.find((p) => p.lines.some((l) => l.medication_name === medicationName));
     expect(prescription).toBeTruthy();
-    expect(prescription!.lines[0].dispensing_status).toBe("not_applicable");
+    expect(prescription!.lines[0].dispensing_status).toBe("pending");
 
     // Anular la receta desde la UI y verificar que persiste contra el backend.
     await user.type(within(dialog).getByPlaceholderText("Motivo de anulación"), "Emitida por error en esta prueba");

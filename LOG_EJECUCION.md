@@ -1096,6 +1096,72 @@ Continuación en orden de tabla dentro del mismo paquete `app/medical/`.
 
 ---
 
+---
+
+## MÓDULO 16 — `pharmacy`, dispensación + verificación clínica — Fases 1-4 completas
+
+Primer módulo del paquete Farmacéutico. Elegido siguiendo el orden de la tabla una vez que
+Médico completó sus 6 módulos construibles y el módulo 15 (reserva pública) quedó confirmado
+bloqueado por `website`.
+
+- **FEFO real, implementado por primera vez en el proyecto.** `inventory` (módulo 3) lo había
+  dejado explícitamente fuera de su propio cierre — su docstring lo declara TODO. `pharmacy`
+  consume las primitivas ya reales de `inventory` (`Lot.expiry_date`, `StockLevel`,
+  `StockService.ship`) para implementar la selección: ordena por `expiry_date ASC NULLS LAST` y
+  consume greedy hasta cubrir la cantidad pedida, generando una `DispensationLine` por cada lote
+  tocado — sin modificar el módulo 3 ya cerrado y con sus propios tests pasando.
+- Sustancias Controladas: tabla propia de `pharmacy` (`ControlledSubstanceProduct`, FK a
+  `inventory.Product`) en vez de agregar una columna al esquema de un módulo ajeno ya cerrado.
+  Libro de registro append-only generado automáticamente cuando una línea de dispensación
+  corresponde a un producto marcado.
+- POS Farmacia reutiliza la misma `DispensationOrder` que la dispensación con receta — una venta
+  de mostrador es, estructuralmente, una dispensación con `prescription_id=NULL` más los campos
+  de cobro. Crear una segunda entidad casi idéntica habría duplicado toda la lógica de FEFO/
+  verificación/sustancias controladas sin necesidad real.
+- Verificación Clínica: si `medical` está activo, se reutiliza `ClinicalRecordService.
+  list_for_patient` (mismo patrón de reuso cruzado que `medical` llamando a
+  `accounting`/`notifications`) para traer las alergias reales; si no, se exige el formulario
+  mínimo que la spec pide explícitamente.
+- Migración con RLS+grants sobre 4 tablas nuevas. `tests/test_pharmacy_module.py`: 11 tests,
+  capa de servicio directa (mismo patrón que `sales`/`medical`) — FEFO consume el lote que vence
+  antes, se divide automáticamente entre dos lotes cuando uno no alcanza, stock insuficiente →
+  409, formulario de alergias obligatorio sin `medical`, receta requiere `medical` activo, venta
+  de mostrador con cobro registrado, sustancia controlada genera entrada en el libro (y una NO
+  controlada no genera nada), anular no restituye stock + guardia de doble-anulación, orden
+  inexistente → 404, aislamiento RLS cross-tenant. **Los 11 pasaron al primer intento.**
+- Contrato re-congelado a 114 rutas (107+7).
+- **Hallazgo real de Fase 3 (frontend) — encontrado reproduciendo con `curl`, no ajustando el
+  test a ciegas**: el primer intento de dispensar desde la UI fallaba sin ningún error visible en
+  pantalla. En vez de seguir iterando sobre el test, se replicó la misma petición directo contra
+  el backend con `curl` — y ahí apareció el error real: `medical` estaba activo para la compañía
+  de prueba compartida, así que `pharmacy` intentaba consultar el expediente clínico del cliente
+  para chequear alergias — pero ese cliente de mostrador no tenía `is_patient=true` (correcto,
+  por diseño — DED-48), y `ClinicalRecordService` exige ese flag, devolviendo un 422 que el
+  frontend nunca llegó a mostrarle claramente al usuario de la prueba. Se corrigió la condición:
+  el chequeo contra el expediente médico ahora exige `medical` activo **y**
+  `patient.is_patient=true`; en cualquier otro caso —incluido `medical` activo pero el contacto
+  sin ese flag— cae al formulario mínimo de alergias.
+- **Efecto colateral real, no una regresión**: activar el paquete `pharmacy` en la compañía de
+  prueba compartida (necesario para poder probar el módulo nuevo desde la UI) cambió el
+  `dispensing_status` de una receta recién emitida en el test de `medical` de `not_applicable` a
+  `pending` (comportamiento correcto según DED-30, ya que ahora sí hay un paquete `pharmacy` que
+  podría dispensarla) — se actualizó esa aserción para reflejar el estado real del fixture actual,
+  documentado in situ para que quede claro que no fue una regresión sino un cambio de estado
+  esperado.
+- Frontend: `PharmacyPage.tsx` — sección de dispensación/POS con líneas dinámicas de medicamento
+  (con o sin receta externa), y sección de sustancias controladas (marcar/desmarcar + libro de
+  registro visible bajo demanda). `PharmacyPage.integration.test.tsx`: flujo completo con dos
+  lotes reales de vencimiento distinto, verificando contra el backend cuál lote se consumió
+  (FEFO), más marcar un producto como controlado y confirmar que la segunda dispensación generó
+  una entrada real en el libro de registro.
+- `npx tsc --noEmit` y `npm run build`: limpios. `pytest tests/` final desde una base recreada de
+  cero (18 migraciones): **112/112**.
+- **Módulo 16 (pharmacy — dispensación + verificación clínica) cerrado — Fases 1-4 completas.**
+  Primer módulo del paquete Farmacéutico. Quedan del mismo paquete: Interacciones, Aseguradoras/
+  Copagos, Reposición a Droguerías y MTM (módulos 17-21, todos `[extendido]`).
+
+---
+
 ## Limitaciones de red del sandbox, documentadas explícitamente durante el proyecto
 - `ui.shadcn.com` no disponible → componentes UI escritos a mano sobre Radix.
 - `cdn.playwright.dev` no disponible → Vitest+jsdom como sustituto de E2E real en navegador

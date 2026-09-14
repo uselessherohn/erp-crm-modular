@@ -18,6 +18,7 @@ from app.pipeline import routers as pipeline_routers
 from app.hr import routers as hr_routers
 from app.medical import routers as medical_routers
 from app.notifications import routers as notifications_routers
+from app.pharmacy import routers as pharmacy_routers
 from app.shared.exceptions import DomainError, ValidationError as DomainValidationError
 
 app = FastAPI(title="ERP/CRM Modular — Núcleo", version="10.4")
@@ -106,6 +107,7 @@ app.include_router(pipeline_routers.router)
 app.include_router(hr_routers.router)
 app.include_router(medical_routers.router)
 app.include_router(notifications_routers.router)
+app.include_router(pharmacy_routers.router)
 
 
 @app.get("/health")
