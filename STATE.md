@@ -1148,6 +1148,25 @@ spec 7.1) — **Fases 1-4 completas**
 ## 5. Resumen rodante (últimos módulos cerrados — 22/23/24 y 16 se trabajaron
 en paralelo desde la misma base, portal/mensajería módulo 14; ver más abajo
 para módulos anteriores)
+- **BUG REAL sistémico, encontrado y corregido en migración `1d9a25acd918`**:
+  `bootstrap_admin.py` fallaba en CI con `permission denied for sequence
+  ecommerce_settings_id_seq` al insertar como `erp_app` real (no
+  superusuario) — reproducido en local para diagnosticarlo (blob storage
+  de logs de Actions no accesible desde el entorno de chat). Causa: el
+  `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO erp_app` de
+  la migración inicial (`1483b27d4cff`, módulo core) solo cubre las
+  secuencias que existían en ese momento — Postgres no lo aplica
+  retroactivamente a secuencias creadas por migraciones posteriores, y
+  ninguna migración desde `hr` (módulo 8) en adelante volvió a otorgar el
+  `USAGE` sobre sus propias secuencias nuevas (solo repetían el `GRANT`
+  de privilegios de tabla). Nunca se había detectado porque ningún test
+  de `pytest` ni cierre previo había insertado una fila como `erp_app`
+  real en una tabla creada después de `hr` — afecta potencialmente a
+  hr, medical (+ recetas/laboratorio/teleconsulta/facturación/portal),
+  notifications, website, ecommerce, reports y pharmacy. Fix: re-emitir
+  el `GRANT` contra todas las secuencias existentes hoy. Verificado en
+  local (reset de BD limpio + migrar + bootstrap completo → `bootstrap
+  ok`) antes de subir.
 - Módulo 24 (reports, Transversal) — **△ ESCRITO, NO VERIFICADO** (sin
   Postgres/red/Node en el entorno de escritura). Exportación de Datos
   [core] a XLSX/PDF (`openpyxl`/`reportlab`, dependencias nuevas
