@@ -1,7 +1,9 @@
 import asyncio
+import secrets
 from app import models_registry  # noqa: F401  (registra todos los modelos — ver ese módulo)
 from app.database import AsyncSessionLocal
 from app.core import models, security
+from app.ecommerce import models as ecommerce_models
 from sqlalchemy import select, text
 
 
@@ -140,6 +142,8 @@ async def bootstrap():
             models.Permission(code="website:page:unpublish", description="Despublicar página del CMS"),
             models.Permission(code="website:form_submission:list", description="Listar envíos de formularios de captación"),
             models.Permission(code="website:form_submission:read", description="Ver un envío de formulario de captación"),
+            models.Permission(code="ecommerce:settings:read", description="Ver configuración de ecommerce"),
+            models.Permission(code="ecommerce:settings:update", description="Crear/editar configuración de ecommerce"),
         ]
         db.add_all(perms)
         await db.flush()
@@ -173,6 +177,12 @@ async def bootstrap():
         # diseno_modulos_22_25_erp_crm.md sección 2.1 (no confirmado por
         # Roberto todavía).
         db.add(models.CompanyPackage(company_id=company_id, package="web", status="active"))
+        # ecommerce (módulo 23): fila de configuración mínima — sin
+        # almacén/lista de precios todavía (un admin real los configura
+        # después vía PATCH /ecommerce/settings; el checkout falla con un
+        # error explícito hasta entonces, ver
+        # EcommerceSettingsService.get_or_raise).
+        db.add(ecommerce_models.EcommerceSettings(company_id=company_id, webhook_secret=secrets.token_hex(32)))
 
         await db.commit()
         print("bootstrap ok — user_id:", user.id, "role_id:", role.id)

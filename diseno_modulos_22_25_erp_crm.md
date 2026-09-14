@@ -56,6 +56,18 @@ contrario.
 
 ## 2. Módulo 23 — `ecommerce`
 
+> **Implementado** (backend + configuración de panel interno) en un cierre
+> posterior a este documento — ver `STATE.md`, sección `ecommerce (módulo
+> 23)`, para el contrato real, los hallazgos durante la implementación
+> (algunos no anticipados acá, ej. la falta de un almacén "por defecto" —
+> resuelto con `EcommerceSettings`) y qué quedó verificado vs no. Una
+> desviación deliberada de este diseño: la sesión de carrito anónimo (2.4)
+> se implementó como un token opaco devuelto en el body + header
+> `X-Cart-Token`, no como cookie firmada — funcionalmente equivalente,
+> más simple de implementar/probar sin navegador real. El resto de esta
+> sección se deja tal cual se escribió originalmente, como referencia del
+> razonamiento previo a construirlo.
+
 **Depende de** (spec 8.4 + JSON): `website` (22, ver nota de secuencia
 arriba), `inventory` (3), `sales` (5), `accounting` (6) — **los tres
 siempre juntos**, nunca un subconjunto (spec 2.2).

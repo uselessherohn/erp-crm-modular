@@ -49,7 +49,7 @@ es transparente a nivel de API).
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
 - Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (— bloqueado por `website`)
 - Farmacéutico: (—) todos
-- Web: website (△ Backend + frontend escritos, Fases 1 y 3 — **NO verificado**: sin Postgres/red/Node en el entorno donde se escribió, ver sección dedicada abajo), ecommerce (— diseño en `diseno_modulos_22_25_erp_crm.md`, no construido)
+- Web: website (△ Backend + frontend escritos, Fases 1 y 3 — **NO verificado**: sin Postgres/red/Node en el entorno donde se escribió, ver sección dedicada abajo), ecommerce (△ ídem — backend completo + configuración de panel interno, storefront público es un frontend separado fuera de alcance de este panel, ver sección dedicada abajo)
 - Transversal: reports (—), audit completo (—), notifications (✓ Completo — Fases 1-4 completas)
 
 ## 2. Contratos públicos vigentes (NO redefinir)
@@ -854,6 +854,97 @@ spec 7.1) — **Fases 1-4 completas**
   motivo y el TODO de reemplazo). `WebsitePage.integration.test.tsx`
   escrito, **NO ejecutado**.
 
+### `ecommerce` (módulo 23) — △ ESCRITO, NO VERIFICADO
+
+> Misma advertencia que `website` arriba — backend completo + página de
+> configuración en el panel interno, pero **no ejecutado** contra Postgres
+> ni frontend real (sin acceso a red/DB/Node en el entorno de escritura).
+> No confundir `△` con `✓`. Checklist de cierre real: migrar
+> (`355c2d2ae36f`), correr `pytest tests/test_ecommerce_module.py`, congelar
+> contrato + codegen real (y borrar
+> `frontend/src/lib/ecommerce-temp-contract.ts`), `npm run build` +
+> `vitest run src/pages/EcommercePage.integration.test.tsx`.
+
+- **Rutas nuevas: 9** (126 rutas totales, 117 previas + 9): panel interno
+  (`POST/GET/PATCH /ecommerce/settings`) + storefront público sin JWT
+  (`GET /public/ecommerce/{company_id}/catalog`,
+  `POST /public/ecommerce/{company_id}/carts`,
+  `GET /public/ecommerce/{company_id}/carts/{cart_id}`,
+  `POST /public/ecommerce/{company_id}/carts/{cart_id}/items`,
+  `POST /public/ecommerce/{company_id}/carts/{cart_id}/checkout`,
+  `POST /public/ecommerce/{company_id}/webhooks/{gateway}`).
+- **No se inventó un modelo `Order` paralelo**: el checkout crea
+  directamente una `sales.SalesOrder` real vía
+  `SalesOrderService.create_draft(..., _skip_commit=True)` — misma
+  transacción que actualizar el `Cart` (mismo patrón que
+  `QuoteService.convert_to_order`, módulo 5).
+- **Gating de paquete resuelto** (cierra el AMBIGUO de
+  `diseno_modulos_22_25_erp_crm.md` sección 2.1, con una solución más
+  simple de lo que ese documento anticipaba): `require_package("web",
+  minimal_module="ecommerce")` + `require_package("administrative",
+  minimal_module="sales")` — reutiliza el campo `minimal_modules` ya
+  existente sin necesidad de una variante nueva de `require_package` (el
+  fix del bug de módulo 22 ya le dio la semántica correcta: lista vacía/
+  `None` = compra completa = pasa cualquier submódulo). El bootstrap de El
+  Roble no necesitó tocarse — ya tenía `web` y `administrative` con
+  `minimal_modules=None` (compra completa), que bajo la semántica
+  corregida ya cubre `ecommerce` y `sales` sin arrastre explícito.
+- **HALLAZGO REAL no anticipado en el diseño**: `sales.SalesOrder`
+  requiere `warehouse_id` obligatorio, y `inventory.Warehouse` no tiene
+  ningún campo "por defecto" — sin configurar cuál almacén despacha los
+  pedidos online, el checkout no tiene forma de armar la orden. Se agregó
+  `EcommerceSettings` (una fila por compañía: `default_warehouse_id`,
+  `default_price_list_id`, `webhook_secret`) — el checkout falla con
+  `ValidationError` explícito si no está configurada, en vez de adivinar
+  un almacén.
+- **DEDUCIBLE**: catálogo público = productos activos que tengan precio
+  en la lista de precios resuelta (`EcommerceSettings.default_price_list_id`
+  o, si no está seteada, la `PriceList` con `is_default=true`) — un
+  producto sin esa entrada simplemente no aparece, no es un error.
+- **DEDUCIBLE**: el precio de cada línea se re-verifica en el checkout
+  contra `PriceListService.get_price` (reutilizado de `sales`, sin
+  reimplementar la resolución por quiebre de cantidad) en vez de copiar
+  `CartItem.unit_price_snapshot` — un carrito puede quedar abierto un
+  buen rato antes de pagarse.
+- **DEDUCIBLE, simplificación explícita**: verificación de firma de
+  webhook con HMAC-SHA256 y un secreto por compañía
+  (`EcommerceSettings.webhook_secret`), no el esquema propio de cada
+  pasarela real — no se integró ningún SDK de Stripe/PayPal/MercadoPago
+  en este cierre (spec 8.4 no especifica cuál usar). El payload esperado
+  del webhook es un contrato propio simplificado
+  (`{event_id, sales_order_id, status}`); un adaptador real traduciría el
+  webhook nativo de cada pasarela a esta forma — TODO explícito.
+- **LIMITACIÓN CONOCIDA, documentada en el propio código**
+  (`WebhookService.handle_payment_event`): confirmar la orden, facturar y
+  contabilizar, y registrar el `PaymentGatewayEvent` de deduplicación NO
+  son atómicos entre sí — `SalesOrderService.confirm` e
+  `InvoiceService.create_draft`/`.post` hacen su propio commit interno y
+  no exponen `_skip_commit`. Si el proceso se cae entre confirmar la
+  orden y registrar el evento, un reintento legítimo de la pasarela
+  chocaría con `ConflictError`. TODO explícito: agregar `_skip_commit` a
+  esos servicios para poder envolver todo en una sola transacción, igual
+  que se hizo en `CheckoutService.checkout()`.
+- **No se integró notificación al cliente** en la confirmación de pago —
+  `notifications` (módulo 26) solo notifica `User` internos, no `Contact`
+  externos; no existe canal de email transaccional al cliente en este
+  proyecto. TODO explícito, no una omisión silenciosa (el diseño original
+  en `diseno_modulos_22_25_erp_crm.md` asumía —incorrectamente— que se
+  podía reusar el mismo patrón que `medical` → `notifications`, módulo
+  14; ese patrón notifica personal interno, no aplica acá).
+- Bootstrap: `EcommerceSettings` creada para El Roble (sin
+  `default_warehouse_id`/`default_price_list_id` — un admin real los
+  configura después) y 2 permisos nuevos (`ecommerce:settings:read`,
+  `ecommerce:settings:update`).
+- 8 tests backend escritos (`test_ecommerce_module.py`) — **NO
+  ejecutados** (ver nota al inicio de esta sección).
+- Frontend: solo `EcommercePage.tsx` (configuración de almacén/lista de
+  precios por defecto) + `hooks/use-ecommerce.ts` — el catálogo, carrito
+  y checkout del storefront público son, por diseño, un frontend
+  *separado* (spec 10), no parte de este panel administrativo. Usa
+  `frontend/src/lib/ecommerce-temp-contract.ts` (shim temporal, mismo
+  motivo que `website-temp-contract.ts`). `EcommercePage.integration.test.tsx`
+  escrito, **NO ejecutado**.
+
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
   producto. Datos de prueba truncados al cerrar cada fase.)
@@ -913,6 +1004,10 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-45 | #22 website | DEDUCIBLE | `Page` con dos estados (`draft`/`published`), sin flujo de aprobación editorial. | Abierto — pendiente confirmación de Roberto |
 | DED-46 | #22 website | DEDUCIBLE | `FormSubmission` reutiliza un `Contact` existente por email (marcándolo `is_lead=true` si no lo era) en vez de crear un duplicado; sin email, siempre crea uno nuevo. | Abierto — pendiente confirmación de Roberto |
 | AMB-03 | #22 website | AMBIGUO | Cómo resuelve el storefront público el `company_id` de cada request en producción (subdominio, dominio propio, header) — implementado con `company_id` explícito en la URL como variante funcional mínima. | Abierto — pendiente confirmación de Roberto |
+| DED-47 | #23 ecommerce | DEDUCIBLE | Sesión de carrito anónimo como token opaco (body + header `X-Cart-Token`), no cookie firmada — desviación deliberada del diseño original en `diseno_modulos_22_25_erp_crm.md` 2.4. | Documentado, no requiere confirmación — cambiar a cookie no toca `services.py` |
+| DED-48 | #23 ecommerce | DEDUCIBLE | `EcommerceSettings` (nueva, no anticipada en el diseño) resuelve la falta de un almacén "por defecto" en `inventory.Warehouse` — checkout falla explícito si no está configurada. | Abierto — pendiente confirmación de Roberto sobre si el almacén debería poder variar por región/método de envío en vez de ser uno solo por compañía |
+| DED-49 | #23 ecommerce | DEDUCIBLE | Verificación de webhook con HMAC-SHA256 + secreto propio por compañía, contrato de payload simplificado — no se integró ningún SDK de pasarela real. | Abierto — bloqueante real antes de producción, depende de qué pasarela(s) elija Roberto |
+| AMB-04 | #23 ecommerce | AMBIGUO | Confirmar/facturar/registrar evento de pago no son atómicos entre sí (`SalesOrderService.confirm`/`InvoiceService.*` no exponen `_skip_commit`) — riesgo de `ConflictError` en un reintento de webhook tras una caída a medio proceso. | Abierto — requiere extender esos servicios, fuera del alcance de este cierre |
 
 ## 5. Resumen rodante (solo los últimos 3 módulos cerrados)
 - Módulo 14 (medical — portal/mensajería paciente-médico) — **Fases 1-4
