@@ -76,17 +76,26 @@ describe("WebsitePage — flujo real contra backend en 127.0.0.1:8000", () => {
     expect(publicPage.title).toBe(title);
 
     const email = `lead-${suffix}@example.com`;
+    const leadName = `Lead de Prueba ${suffix}`;
     const submitRes = await fetch(`${BASE_URL}/public/website/${companyId}/forms`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ form_name: "contacto", name: "Lead de Prueba", email, message: "Hola" }),
+      body: JSON.stringify({ form_name: "contacto", name: leadName, email, message: "Hola" }),
     });
     expect(submitRes.status).toBe(201);
 
     await waitFor(
       async () => {
+        // GET /contacts?search= busca por similitud de trigrama contra
+        // `name` (ver ContactService.list_contacts) — NO busca por email.
+        // Buscar por `email` aquí siempre devolvía una lista vacía/sin el
+        // contacto esperado (bug real de este test, encontrado al
+        // ejecutarlo contra Postgres real por primera vez en esta sesión
+        // de verificación externa, sep-2026). `leadName` es único por
+        // corrida (mismo `suffix` que `email`/`slug`), así que la
+        // búsqueda por nombre no tiene ambigüedad entre corridas.
         const contacts = await apiRequest<Array<{ email: string | null; is_lead: boolean }>>("/contacts", {
-          query: { search: email },
+          query: { search: leadName },
         });
         const lead = contacts.find((c) => c.email === email);
         expect(lead?.is_lead).toBe(true);

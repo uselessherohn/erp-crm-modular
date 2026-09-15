@@ -23,6 +23,7 @@ import { WebsitePage } from "@/pages/WebsitePage";
 import { EcommercePage } from "@/pages/EcommercePage";
 import { ReportsPage } from "@/pages/ReportsPage";
 import { PharmacyPage } from "@/pages/PharmacyPage";
+import { AuditPage } from "@/pages/AuditPage";
 import { AppLayout } from "@/layouts/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
@@ -69,6 +70,7 @@ export function App() {
             <Route path="/ecommerce" element={<EcommercePage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/pharmacy" element={<PharmacyPage />} />
+            <Route path="/audit" element={<AuditPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/roles" element={<RolesPage />} />
           </Route>

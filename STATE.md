@@ -50,7 +50,7 @@ es transparente a nivel de API).
 - Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (△ backend VERIFICADO contra Postgres real — 7/7 tests, migración, contrato recongelado —, falta solo el frontend del widget, ver su sección)
 - Farmacéutico: dispensación + verificación clínica (✓ Completo — módulo 16), sustancias controladas (✓ Completo — módulo 16), reposición a droguerías (—), aseguradoras/copagos (—), POS farmacia (✓ Completo — módulo 16), MTM (—)
 - Web: website (✓ Completo — verificado vía CI), ecommerce (✓ Completo — backend + configuración de panel interno verificados vía CI; storefront público es un frontend separado fuera de alcance de este panel)
-- Transversal: reports (✓ Completo — verificado vía CI), audit completo (— no construido, ver `diseno_modulos_22_25_erp_crm.md` sección 4), notifications (✓ Completo — Fases 1-4 completas)
+- Transversal: reports (✓ Completo — verificado vía CI), audit completo (✓ Completo — módulo 25, verificado contra Postgres real, sesión sep-2026), notifications (✓ Completo — Fases 1-4 completas)
 
 ## 2. Contratos públicos vigentes (NO redefinir)
 
@@ -1216,6 +1216,96 @@ spec 7.1) — **Fases 1-4 completas**
   real verificado end-to-end (dos lotes con vencimiento distinto, se
   confirma cuál se consumió), marcar sustancia controlada, y verificar
   que la segunda dispensación sí generó una entrada real en el libro.
+
+### `audit` — paquete completo (módulo 25) — ✓ COMPLETO, VERIFICADO contra Postgres real
+
+> **Nota de verificación externa (sep-2026, sesión posterior a la
+> escritura del módulo)**: se instaló Postgres real ad-hoc y se corrió
+> el módulo por primera vez. `alembic upgrade head` corre limpio con
+> `f3b6a1d9c204` sobre las 26 migraciones previas (incluida `a1c4f0e2b9d7`,
+> módulo 15); `pytest tests/test_audit_module.py` pasa 5/5;
+> `contracts/openapi.json` quedó recongelado contra el servidor real
+> (139 rutas / 174 operaciones, incluidas las 3 de este módulo);
+> `npx vitest run` completo (19/19 archivos, 28/28 tests, aunque este
+> módulo no tiene su propio archivo de test de integración de frontend
+> — ver TODO nuevo más abajo). Se encontraron y corrigieron **dos bugs
+> reales**, ninguno relacionado con el módulo 15:
+>
+> 1. **Test chocaba con el propio trigger de inmutabilidad que este
+>    módulo documenta.** El helper `_log` de `test_audit_module.py`
+>    insertaba un evento de auditoría y LUEGO intentaba
+>    `UPDATE audit SET created_at = ...` para simular un evento "viejo"
+>    sin esperar días reales (necesario para probar la ventana de
+>    retención). Pero `trg_audit_immutable` (módulo 1, spec 8.0) bloquea
+>    **cualquier** UPDATE/DELETE sobre `audit` incondicionalmente — el
+>    mismo comportamiento que `app/audit/models.py` describe
+>    explícitamente en su docstring (AMB-07) como la razón por la que la
+>    "Depuración" real necesita `scripts/purge_audit.py` fuera de la
+>    capa de aplicación. El test nunca podía pasar tal como estaba
+>    escrito, contra Postgres real, con el rol de runtime real (`erp_app`,
+>    sin bypass de RLS ni de trigger). Corregido: cuando se necesita
+>    backdatear, se construye el `AuditLog` con `created_at` ya fijado
+>    ANTES del único INSERT (el trigger no bloquea INSERT, solo
+>    UPDATE/DELETE) — se deja de pasar por `AuditService.log_event` (que
+>    a propósito no expone ese parámetro; la app real nunca backdatea un
+>    evento) solo para ese caso.
+> 2. **GRANT de tabla faltante, real, sistémico.** La migración
+>    `f3b6a1d9c204` nunca otorgó a `erp_app` permisos sobre la tabla
+>    nueva `audit_retention_policies` ni sobre su secuencia. El
+>    comentario original de la migración asumía —incorrectamente— que el
+>    `GRANT` sistémico de `1d9a25acd918` (que solo cubre secuencias
+>    existentes al momento en que corre) más el `GRANT ... ON ALL TABLES`
+>    de la migración inicial (que tampoco cubre tablas futuras: este
+>    proyecto NUNCA configuró `ALTER DEFAULT PRIVILEGES`) ya dejaban
+>    cubierta cualquier tabla nueva. Es el mismo patrón de bug que
+>    `1d9a25acd918` ya documentó para secuencias, aquí aplicado a una
+>    tabla — y, a diferencia de aquella vez, nadie lo había ejercitado
+>    todavía contra Postgres real como `erp_app` (ni pytest ni ningún
+>    cierre previo insertaban en esta tabla). `erp_app` fallaba con
+>    `InsufficientPrivilegeError: permission denied for table
+>    audit_retention_policies` en el primer SELECT/INSERT real. Corregido
+>    agregando `GRANT SELECT, INSERT, UPDATE, DELETE ON
+>    audit_retention_policies TO erp_app` y `GRANT USAGE, SELECT ON
+>    audit_retention_policies_id_seq TO erp_app` a la propia migración
+>    `f3b6a1d9c204`, en vez de una migración de reparación aparte (a
+>    diferencia de `1d9a25acd918`, que sí necesitó ser una migración
+>    nueva porque el bug de secuencias ya estaba desplegado en cierres
+>    previos — este se corrigió en la misma migración porque el módulo
+>    25 nunca había llegado a `main` todavía).
+>
+> **Diseño real, documentado sin resolver en silencio (AMB-07)**: la
+> "Depuración" (borrado físico de filas vencidas de `audit`) no puede
+> ejecutarse desde la capa HTTP de la API — el trigger de inmutabilidad
+> bloquea el DELETE incluso para `erp_app`, que no es dueño de la tabla
+> y no puede desactivar el trigger. `scripts/purge_audit.py` existe para
+> esto: corre fuera de la API, con credenciales elevadas (probablemente
+> el rol `postgres`/admin), y usa `AuditRetentionService` para calcular
+> qué filas son candidatas antes de un DELETE directo. **Nunca se
+> ejecutó de punta a punta contra Postgres real en esta sesión** —
+> requiere las credenciales de admin reales del entorno de despliegue,
+> no las de desarrollo local (`postgres_dev_pw`, ad-hoc de esta
+> verificación); queda como TODO explícito, no como brecha silenciosa.
+>
+> Eventos `medical.*` quedan protegidos de la política de retención
+> configurable sin importar cuántos días se configuren — ver
+> `AuditQueryService.MEDICAL_EVENT_PREFIX` en `app/audit/services.py` y
+> la nota en `AuditRetentionPolicy.retention_days` (spec 8.1, explícito:
+> la retención regulatoria clínica nunca depende de esta configuración).
+>
+> **TODO nuevo, no bloqueante**: a diferencia del resto de módulos con
+> frontend, `AuditPage.tsx` no tiene su propio
+> `AuditPage.integration.test.tsx` — quedó sin cobertura de integración
+> de frontend en este cierre. No se escribió en esta sesión de
+> verificación (fuera de alcance: se pidió verificar y corregir lo ya
+> escrito, no ampliar cobertura nueva); queda pendiente para un cierre
+> futuro.
+>
+> Columna `changes` (JSONB, nullable) en `audit`: agregada
+> retroactivamente. Los ~20 call-sites de `AuditService.log_event` que
+> ya existían antes de este módulo (uno por módulo cerrado) NO se
+> retrofittearon para poblarla — tocaría cada módulo ya cerrado, fuera
+> de alcance de este cierre. Queda disponible desde ahora en adelante;
+> `null` en filas antiguas significa "sin diff capturado", no un error.
 
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del

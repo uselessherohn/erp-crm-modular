@@ -290,6 +290,16 @@ class AuditLog(Base):
     entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    changes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    """Módulo 25 (audit completo) — "Control de Cambios (Diff)" [core],
+    agregada retroactivamente (columna nullable, mismo criterio que otras
+    columnas retroactivas del proyecto). Opcional por diseño: los ~20
+    call-sites de `AuditService.log_event` que ya existían antes de este
+    módulo (uno por módulo cerrado) NO se retrofittearon para poblarla —
+    eso tocaría cada módulo ya cerrado, fuera de alcance de este cierre
+    (TODO explícito, ver STATE.md). Queda disponible para quien la use
+    desde ahora en adelante; `null` en filas antiguas simplemente
+    significa "sin diff capturado", no un error de datos."""
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

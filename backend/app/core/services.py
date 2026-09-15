@@ -72,6 +72,7 @@ class AuditService:
         entity_id: int,
         user_id: int | None,
         correlation_id: str | None = None,
+        changes: dict | None = None,
     ) -> models.AuditLog:
         entry = models.AuditLog(
             company_id=company_id,
@@ -80,6 +81,7 @@ class AuditService:
             entity_id=entity_id,
             user_id=user_id,
             correlation_id=correlation_id or str(uuid.uuid4()),
+            changes=changes,
         )
         db.add(entry)
         await db.flush()

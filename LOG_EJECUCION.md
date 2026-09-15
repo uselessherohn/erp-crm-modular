@@ -1455,3 +1455,92 @@ ad-hoc, se crearon los tres roles que espera `app/config.py` (`erp_app`, `erp_au
   Postgres real" — sigue en `△`, no `✓`, porque el frontend del widget público (TODO-45) sigue sin
   construirse. Sin cambios de alcance ni de contrato más allá de lo ya descrito en el cierre
   original del módulo 15.
+
+---
+
+## Continuación de la verificación externa: Vitest completo (módulo 15) + módulo 25 audit completo (sep-2026)
+
+**Parte 1 — cerrar el pendiente de Vitest del módulo 15.** La corrida anterior de `npx vitest run`
+había fallado casi por completo con "no se pudo conectar con el servidor" pese a que el backend
+respondía a `curl` — causa real: cada invocación de la herramienta de shell es un proceso nuevo, y
+un `uvicorn` lanzado en background con `&` simple no sobrevive entre invocaciones separadas. Se
+resolvió corriendo backend + seed + `vitest` dentro de un único comando compuesto, para que el
+servidor siguiera vivo durante toda la corrida.
+
+Con el backend realmente vivo, aparecieron 3 fallos genuinamente nuevos (no el error de conexión
+anterior):
+- `StockPage` — resultó flaky (pasó en un reintento inmediato); no se investigó más a fondo, no era
+  reproducible.
+- `WebsitePage` — `GET /contacts?search=<email>` nunca encontraba el contacto recién creado por un
+  envío de formulario público. Causa real, confirmada leyendo `ContactService.list_contacts`:
+  `search` hace similitud de trigrama contra la columna `name`, nunca contra `email` — el test
+  buscaba por email como si el backend soportara ese caso, y nunca lo soportó. Corregido el test
+  para buscar por `name` (con sufijo único por corrida, igual que `email`/`slug`), documentando la
+  limitación real de la API en un comentario en vez de cambiarle el comportamiento a `search` sin
+  que el cliente lo pida.
+- `AccountsPage` — `getByText("Factura de venta")` encontraba múltiples filas. Diagnosticado
+  corriendo `vitest` dos veces seguidas contra la misma base sin recrearla: `CreditDebitNotesPage`,
+  `InvoicesPage`, `MedicalPage` y `PaymentsPage` también crean mapeos `document_type=sales_invoice`
+  (con roles distintos) contra la misma compañía compartida "El Roble" — cada corrida adicional deja
+  más filas con esa misma etiqueta visible. No es un bug de la app ni del test: al recrear la base
+  de cero y correr una sola vez, `AccountsPage` pasó sin ningún cambio de código.
+
+Con la base recreada de cero (`DROP DATABASE`→`CREATE DATABASE`→`alembic upgrade head`→
+`POST /internal/companies`→`bootstrap_admin.py`→`vitest run`, una sola vez): **19/19 archivos,
+28/28 tests en verde**. Cierre real del módulo 15 completo salvo el frontend del widget público
+(sigue pendiente, sin construir, ver README/STATE.md).
+
+**Parte 2 — módulo 25 (audit completo), recibido como ZIP nuevo (`erp-crm-modular-main-modulo25.zip`).**
+El ZIP estaba construido sobre una base DE ANTES de los fixes de esta misma sesión (su
+`test_ecommerce_module.py` y `scripts/verify_state.py` traían las versiones viejas, sin los fixes ya
+en `main`). Se hizo un merge quirúrgico en vez de sobreescribir: los archivos exclusivos del módulo
+25 (`app/audit/*`, la migración `f3b6a1d9c204`, `scripts/purge_audit.py`, `test_audit_module.py`,
+`AuditPage.tsx`, `use-audit.ts`, `audit-temp-contract.ts`) se copiaron tal cual; los archivos
+compartidos que el módulo 25 sí necesitaba tocar (`main.py`, `core/models.py`, `core/services.py`,
+`models_registry.py`, `bootstrap_admin.py`, `App.tsx`, `AppLayout.tsx`) se editaron a mano para
+aplicar solo el diff real de módulo 25 sin perder los fixes ya pusheados; y los archivos que el ZIP
+traía revertidos sin ningún cambio de módulo 25 real (`test_ecommerce_module.py`,
+`scripts/verify_state.py`) se dejaron intactos con la versión ya corregida de esta sesión.
+
+Verificación real contra Postgres, primera corrida:
+- `alembic upgrade head`: limpio, `f3b6a1d9c204` sobre las 26 migraciones previas.
+- `pytest tests/`: **5 fallos**, los 5 en `test_audit_module.py` — `InsufficientPrivilegeError:
+  audit es append-only: UPDATE no permitido sobre la tabla audit`. Causa real: el helper `_log` del
+  test hacía INSERT y luego `UPDATE audit SET created_at = ...` para simular un evento viejo sin
+  esperar días reales — pero el propio trigger `trg_audit_immutable` (que el módulo 25 describe en
+  su propio docstring, AMB-07, como bloqueo incondicional de UPDATE/DELETE sobre `audit`) lo
+  bloqueaba. El test chocaba con su propia documentación. Corregido: se backdatea fijando
+  `created_at` directo en el `INSERT` (construyendo el modelo a mano en vez de pasar por
+  `AuditService.log_event`), nunca con un `UPDATE` posterior.
+- Segunda corrida: **4 fallos** (bajó de 5), todos `InsufficientPrivilegeError: permission denied
+  for table audit_retention_policies`. Causa real: la migración `f3b6a1d9c204` nunca otorgó a
+  `erp_app` (rol de runtime real de la API) los permisos sobre la tabla nueva
+  `audit_retention_policies` ni sobre su secuencia — su propio comentario original asumía,
+  incorrectamente, que el `GRANT` sistémico de `1d9a25acd918` (que solo cubre secuencias existentes
+  al momento en que corre) más el `GRANT ... ON ALL TABLES` de la migración inicial (que tampoco
+  cubre tablas futuras — este proyecto nunca configuró `ALTER DEFAULT PRIVILEGES`) ya dejaban
+  cubierta cualquier tabla nueva. Mismo patrón de bug que `1d9a25acd918` ya documentó para
+  secuencias, esta vez para una tabla, nunca antes ejercitado contra Postgres real como `erp_app`.
+  Corregido agregando `GRANT SELECT, INSERT, UPDATE, DELETE ON audit_retention_policies TO erp_app`
+  y `GRANT USAGE, SELECT ON audit_retention_policies_id_seq TO erp_app` directamente a la migración
+  `f3b6a1d9c204` (no como migración de reparación aparte, porque el módulo 25 todavía no había
+  llegado a `main`).
+- Tercera corrida, base recreada de cero: **153/153 tests en verde** (148 previos + 5 de audit).
+- `contracts/openapi.json` recongelado contra el servidor real: **139 rutas / 174 operaciones**
+  (+3 del módulo 25: `GET /audit/logs`, `GET /audit/retention-policy`,
+  `GET /audit/retention-policy/purge-eligible`).
+- `scripts/verify_state.py --db-url ...`: sin errores, incluidas las verificaciones de Nivel 1
+  (trigger de `audit` + `idempotency_keys`) contra Postgres real.
+- `frontend`: `npx tsc -b` limpio, `npm run build` exitoso. `npx vitest run` completo (base
+  recreada de cero, una sola corrida): **19/19 archivos, 28/28 tests** — el módulo 25 no tiene su
+  propio archivo de test de integración de frontend (`AuditPage.tsx` sin cobertura), documentado
+  como TODO nuevo en `STATE.md`, no resuelto en esta sesión (fuera de alcance: verificar y corregir
+  lo ya escrito, no ampliar cobertura).
+- **`scripts/purge_audit.py` nunca se ejecutó de punta a punta** en esta sesión — requiere
+  credenciales de admin reales del entorno de despliegue para poder saltarse el trigger de
+  inmutabilidad, no las credenciales ad-hoc de desarrollo local usadas acá. Queda como TODO
+  explícito en `STATE.md`, no como brecha silenciosa.
+- **Resultado**: módulo 25 pasa de "backend escrito, sin verificar, ni siquiera mencionado como
+  construido en README/STATE.md" a "✓ Completo, verificado contra Postgres real". `README.md` y
+  `STATE.md` actualizados: 20 módulos completos de punta a punta (antes 19) más el módulo 15 en
+  `△` (backend verificado, falta frontend del widget).

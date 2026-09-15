@@ -10,14 +10,15 @@ lo hecho, fase por fase).
 
 ## Estado actual del proyecto
 
-**19 módulos completos de punta a punta** más **1 módulo con backend
-completo pendiente de verificación real** (módulo 15, ver nota △ abajo)
+**20 módulos completos de punta a punta** más **1 módulo con backend
+verificado, frontend aún sin construir** (módulo 15, ver nota △ abajo)
 — el paquete Administrativo está completo, Médico tiene sus 6 módulos
-construibles hoy completos, el paquete Web (website/ecommerce) está
-completo, el primer módulo Transversal (notifications) más reports
-también, y el paquete Farmacéutico tiene su primer módulo (que además
-cubre, dentro del mismo cierre, la parte core de sustancias controladas
-y el flujo de POS farmacia — ver DED-49 en `STATE.md`):
+construibles hoy completos salvo el frontend del widget de reserva
+pública, el paquete Web (website/ecommerce) está completo, notifications,
+reports y ahora también audit completo (módulo 25) en Transversal, y el
+paquete Farmacéutico tiene su primer módulo (que además cubre, dentro
+del mismo cierre, la parte core de sustancias controladas y el flujo de
+POS farmacia — ver DED-49 en `STATE.md`):
 
 | # | Módulo | Paquete | Estado |
 |---|--------|---------|--------|
@@ -40,31 +41,70 @@ y el flujo de POS farmacia — ver DED-49 en `STATE.md`):
 | 22 | website (CMS, formularios) | Web | ✓ Completo |
 | 23 | ecommerce (carrito, checkout, pagos) | Web | ✓ Completo |
 | 24 | reports | Transversal | ✓ Completo |
+| 25 | audit completo (UI, retención configurable, reportería) | Transversal | ✓ Completo — verificado contra Postgres real |
 | 26 | notifications | Transversal | ✓ Completo |
 
 De Farmacéutico faltan Interacciones, Aseguradoras/Copagos, Reposición a
-Droguerías y MTM (módulos 17-21, todos `[extendido]`). De Transversal
-falta audit completo (módulo 25; el audit mínimo ya vive en el módulo 1).
+Droguerías y MTM (módulos 17-21, todos `[extendido]`). De Transversal ya
+no falta nada construible hoy (audit completo, módulo 25, se cerró y
+verificó en esta sesión — el audit mínimo ya vivía en el módulo 1).
 
 **Nota de verificación**: 22/23/24 se escribieron en un entorno sin
 Postgres/red/Node y se verificaron después vía CI (GitHub Actions,
 Postgres y servidor reales) — ver la nota al inicio de la sección
 `website` en `STATE.md` para el detalle completo, incluyendo un bug real
-de permisos de secuencia de Postgres que ese CI encontró y corrigió. El
-módulo 15 se escribió en las mismas condiciones (sin Postgres/red) y
-**esta sesión de verificación externa (sep-2026) lo corrió por primera
-vez contra Postgres real**: su backend (modelo, migración, servicios, 2
-rutas públicas, 7 tests — no 9, corregido en `STATE.md`) pasa 7/7, la
-migración `a1c4f0e2b9d7` corre limpia sobre las 25 anteriores, y
-`contracts/openapi.json` quedó recongelado contra el servidor real (136
-rutas / 170 operaciones). Esa misma corrida también encontró y corrigió
-un bug real preexistente, no relacionado con el módulo 15: el fixture
-`store` de `test_ecommerce_module.py` nunca le daba stock físico al
-producto de prueba, por lo que `test_webhook_confirms_order_and_posts_invoice`
-fallaba con `ConflictError` al reservar stock — la suite completa queda
-en 144/144 tras el fix. Lo que **sigue sin construir** del módulo 15 es
-el frontend del widget (es para el sitio público, no una pantalla del
-panel — ver TODO-45 en `STATE.md`); por eso sigue marcado `△` y no `✓`.
+de permisos de secuencia de Postgres que ese CI encontró y corrigió. Los
+módulos 15 y 25 se escribieron en las mismas condiciones (sin
+Postgres/red) y **esta sesión de verificación externa (sep-2026) corrió
+ambos por primera vez contra Postgres real**, en dos pasadas
+consecutivas de la misma sesión:
+
+- **Módulo 15**: backend (modelo, migración, servicios, 2 rutas
+  públicas, 7 tests — no 9, corregido en `STATE.md`) pasa 7/7; la
+  migración `a1c4f0e2b9d7` corre limpia. Esa misma corrida encontró y
+  corrigió un bug real preexistente, no relacionado con el módulo 15: el
+  fixture `store` de `test_ecommerce_module.py` nunca le daba stock
+  físico al producto de prueba, por lo que
+  `test_webhook_confirms_order_and_posts_invoice` fallaba con
+  `ConflictError` al reservar stock. Lo que **sigue sin construir** del
+  módulo 15 es el frontend del widget (es para el sitio público, no una
+  pantalla del panel — ver TODO-45 en `STATE.md`); por eso sigue marcado
+  `△` y no `✓`.
+- **Módulo 25** (audit completo): backend (columna `audit.changes`,
+  tabla `audit_retention_policies`, 3 rutas nuevas, 5 tests) pasa 5/5
+  tras corregir **dos bugs reales**, ninguno relacionado con el 15:
+  1. El helper `_log` de `test_audit_module.py` intentaba backdatear un
+     evento de prueba con `UPDATE audit SET created_at = ...` para
+     simular un evento "viejo" sin esperar días reales — pero el propio
+     trigger de inmutabilidad que este módulo documenta (`trg_audit_immutable`,
+     AMB-07) bloquea **cualquier** UPDATE/DELETE sobre `audit`, sin
+     excepción. El test chocaba con su propia documentación. Corregido
+     fijando `created_at` directo en el INSERT (el trigger no bloquea
+     INSERT), sin pasar nunca por UPDATE.
+  2. La migración `f3b6a1d9c204` nunca le otorgó a `erp_app` (el rol de
+     runtime real de la API) permisos sobre la tabla nueva
+     `audit_retention_policies` ni sobre su secuencia — el comentario
+     original de la migración asumía, incorrectamente, que el `GRANT`
+     sistémico ya cubría tablas futuras (`ALTER DEFAULT PRIVILEGES`
+     nunca se configuró en este proyecto; cada tabla nueva necesita su
+     propio `GRANT` explícito, mismo patrón que el bug de secuencias ya
+     documentado en `1d9a25acd918`). `erp_app` fallaba con
+     `InsufficientPrivilegeError: permission denied for table
+     audit_retention_policies`. Corregido agregando el `GRANT` explícito
+     a la migración.
+
+Con ambos módulos corregidos, `pytest tests/` queda en **153/153** contra
+Postgres real (base recreada de cero), `alembic upgrade head` corre
+limpio de punta a punta (27 migraciones), `contracts/openapi.json` quedó
+recongelado contra el servidor real (139 rutas / 174 operaciones), y
+`npx vitest run` (frontend, contra el backend y la base reales, sin
+mocks) queda en **19/19 archivos, 28/28 tests** — incluido
+`AccountsPage.integration.test.tsx`, que había fallado en una corrida
+anterior de esta misma sesión no por un bug de la app sino por correr la
+suite varias veces seguidas contra la misma compañía sembrada sin
+recrear la base entre corridas (ambigüedad de texto acumulada en la
+tabla de mapeos contables — se resolvió sola al correr una vez limpia,
+no requirió cambio de código).
 
 ## Marca e instalación como PWA
 
@@ -95,7 +135,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 144 tests; ver nota abajo sobre el estado real de la corrida
+pytest tests/ -q   # 153 tests; ver nota abajo sobre el estado real de la corrida
 
 # Frontend
 cd frontend
