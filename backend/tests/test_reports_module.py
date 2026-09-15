@@ -76,6 +76,8 @@ async def sales_fixture(db, company):
         ),
     )
 
+    await _setup_sales_invoice_account_mappings(db, company)
+
     invoice = await InvoiceService.create_draft(
         db, company_id=company.id, created_by=None,
         payload=accounting_schemas.InvoiceCreate(
@@ -91,6 +93,26 @@ async def sales_fixture(db, company):
     await db.commit()
 
     return {"customer": customer, "product": product, "warehouse": warehouse, "order": order}
+
+
+async def _setup_sales_invoice_account_mappings(db, company):
+    """Fixture mínima real del motor de asientos (mismo patrón que
+    tests/test_medical_module.py::_setup_sales_invoice_account_mappings) —
+    sin esto, `InvoiceService.post` no tiene a qué cuentas resolver
+    `sales_invoice`, y las 4 métricas que dependen de una factura
+    contabilizada nunca llegan a ejercitarse."""
+    from app.accounting import models as accounting_models
+
+    for role, name in [("receivable", "Cuentas por Cobrar"), ("income", "Ingresos"), ("tax", "Impuestos por Pagar")]:
+        account = accounting_models.Account(
+            company_id=company.id, code=f"TEST-{role}", name=name, account_type=role,
+        )
+        db.add(account)
+        await db.flush()
+        db.add(accounting_models.DocumentAccountMapping(
+            company_id=company.id, document_type="sales_invoice", role=role, account_id=account.id,
+        ))
+    await db.commit()
 
 
 @pytest.mark.asyncio

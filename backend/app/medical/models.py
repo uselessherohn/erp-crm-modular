@@ -2,9 +2,10 @@
 Módulo 9 — medical (spec 8.2, subset de la tabla de módulos —
 `modulos_erp_crm_v10_4.json` id 9): Expediente Clínico, Agenda Médica,
 Consulta. `medical` — recetas (10), laboratorio (11), teleconsulta (12),
-facturación médica básica (13), portal/mensajería (14), reserva pública de
-citas (15) son módulos separados en la tabla — NO se construyen acá (regla
-1 del Mensaje 0: no adelantar módulos futuros).
+facturación médica básica (13), portal/mensajería (14) y reserva pública
+de citas (15) son módulos separados en la tabla, pero viven en el mismo
+paquete Python `app/medical/` (mismo criterio que el resto — ver spec
+sección 10): no cada módulo de la tabla es una carpeta/router nueva.
 
 Paciente = `Contact` con `is_patient=true` (spec 8.2) — sin entidad
 `Patient` propia, mismo criterio que "Lead" en `pipeline` (DED-15).
@@ -63,6 +64,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -146,6 +148,12 @@ class Appointment(Base):
 
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cancellation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    booked_via_public_widget: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    """Módulo 15 (reserva pública de citas) — agregada retroactivamente,
+    mismo criterio que `reserved_quantity`/`credit_limit` en cierres
+    anteriores. Distingue una cita creada por el widget público (sin
+    cuenta previa del paciente, spec 8.2) de una creada por personal de
+    recepción — solo informativo, no cambia ninguna máquina de estados."""
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

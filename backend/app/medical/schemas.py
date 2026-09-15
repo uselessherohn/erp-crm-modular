@@ -90,6 +90,7 @@ class AppointmentRead(BaseModel):
     status: AppointmentStatusEnum
     reason: str | None
     cancellation_reason: str | None
+    booked_via_public_widget: bool
     created_at: datetime
     updated_at: datetime
 
@@ -352,3 +353,49 @@ class PatientMessageRead(BaseModel):
     body: str
     read_at: datetime | None
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Módulo 15 — Reserva Pública de Citas (widget embebible, sin JWT)
+# ---------------------------------------------------------------------------
+class PublicBusySlot(BaseModel):
+    """Solo el rango ocupado — nunca datos del paciente ni motivo de la
+    cita (esta ruta es anónima, sin JWT; exponer PHI acá sería una fuga
+    real, no solo un descuido de diseño)."""
+
+    model_config = ConfigDict(from_attributes=True)
+    scheduled_start: datetime
+    scheduled_end: datetime
+
+
+class PublicBookingCreate(BaseModel):
+    professional_user_id: int
+    scheduled_start: datetime
+    scheduled_end: datetime
+    reason: str | None = Field(None, max_length=500)
+    patient_name: str = Field(..., min_length=1, max_length=255)
+    patient_email: str | None = Field(None, max_length=255)
+    patient_phone: str | None = Field(None, max_length=50)
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "PublicBookingCreate":
+        if self.scheduled_end <= self.scheduled_start:
+            raise ValueError("scheduled_end debe ser posterior a scheduled_start")
+        return self
+
+    @model_validator(mode="after")
+    def _contact_method_required(self) -> "PublicBookingCreate":
+        if not self.patient_email and not self.patient_phone:
+            raise ValueError("Se requiere al menos un email o teléfono de contacto")
+        return self
+
+
+class PublicBookingRead(BaseModel):
+    """Confirmación mínima devuelta al widget público — nunca el objeto
+    `Appointment` completo (evita exponer `patient_contact_id` u otros
+    campos internos a una request anónima)."""
+
+    appointment_id: int
+    scheduled_start: datetime
+    scheduled_end: datetime
+    status: AppointmentStatusEnum

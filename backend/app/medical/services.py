@@ -17,6 +17,7 @@ lectura.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -1029,3 +1030,94 @@ class PatientMessageService:
             await db.commit()
             await db.refresh(message)
         return message
+
+
+# ---------------------------------------------------------------------------
+# Módulo 15 — Reserva Pública de Citas
+# ---------------------------------------------------------------------------
+class PublicBookingService:
+    """Widget embebible sin JWT (spec 8.2/8.4). Reutiliza
+    `AppointmentService.create` para el bloqueo de horario real
+    (`EXCLUDE USING gist`, DED-26) en vez de duplicar esa lógica — el
+    único trabajo propio de este servicio es (1) no filtrar PHI en la
+    consulta de disponibilidad y (2) resolver/crear el `Contact` del
+    paciente sin que tenga cuenta previa."""
+
+    @staticmethod
+    async def list_busy_slots(
+        db: AsyncSession, *, company_id: int, professional_user_id: int, date_from: datetime, date_to: datetime
+    ) -> list[models.Appointment]:
+        result = await db.execute(
+            select(models.Appointment).where(
+                models.Appointment.company_id == company_id,
+                models.Appointment.professional_user_id == professional_user_id,
+                models.Appointment.status.in_(("scheduled", "confirmed")),
+                models.Appointment.scheduled_start < date_to,
+                models.Appointment.scheduled_end > date_from,
+            ).order_by(models.Appointment.scheduled_start)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def _find_or_create_patient_contact(
+        db: AsyncSession, *, company_id: int, name: str, email: str | None, phone: str | None
+    ) -> Contact:
+        """Mismo criterio de deduplicación por email que
+        `website.FormSubmissionService._find_or_create_lead_contact`
+        (DED-46) — extendido acá a `is_patient` en vez de `is_lead`, sin
+        pisar otros flags si el contacto ya existía (ej. si ya era
+        cliente o lead, sigue siéndolo, y ahora además paciente)."""
+        contact: Contact | None = None
+        if email:
+            result = await db.execute(
+                select(Contact).where(Contact.company_id == company_id, Contact.email == email)
+            )
+            contact = result.scalar_one_or_none()
+
+        if contact is not None:
+            if not contact.is_patient:
+                contact.is_patient = True
+                await db.flush()
+            return contact
+
+        contact = Contact(company_id=company_id, name=name, email=email, phone=phone, is_patient=True)
+        db.add(contact)
+        await db.flush()
+        return contact
+
+    @staticmethod
+    async def create(
+        db: AsyncSession, *, company_id: int, payload: schemas.PublicBookingCreate
+    ) -> models.Appointment:
+        patient = await PublicBookingService._find_or_create_patient_contact(
+            db, company_id=company_id, name=payload.patient_name, email=payload.patient_email, phone=payload.patient_phone,
+        )
+
+        appointment = models.Appointment(
+            company_id=company_id,
+            patient_contact_id=patient.id,
+            professional_user_id=payload.professional_user_id,
+            scheduled_start=payload.scheduled_start,
+            scheduled_end=payload.scheduled_end,
+            reason=payload.reason,
+            booked_via_public_widget=True,
+            created_by=None,
+        )
+        db.add(appointment)
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            await db.rollback()
+            if "excl_appointments_professional_overlap" in str(exc.orig):
+                raise ConflictError(
+                    "El profesional ya no tiene ese horario disponible — probablemente otra persona lo reservó primero"
+                ) from exc
+            raise
+
+        await AuditService.log_event(
+            db, company_id=company_id, event="medical.appointment.create", entity_type="appointment",
+            entity_id=appointment.id, user_id=None,
+        )
+        await db.commit()
+        await db.refresh(appointment)
+        return appointment

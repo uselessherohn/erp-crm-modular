@@ -47,7 +47,7 @@ es transparente a nivel de API).
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
-- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (— no construido; ya no bloqueado, `website` está completo)
+- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (△ backend VERIFICADO contra Postgres real — 7/7 tests, migración, contrato recongelado —, falta solo el frontend del widget, ver su sección)
 - Farmacéutico: dispensación + verificación clínica (✓ Completo — módulo 16), sustancias controladas (✓ Completo — módulo 16), reposición a droguerías (—), aseguradoras/copagos (—), POS farmacia (✓ Completo — módulo 16), MTM (—)
 - Web: website (✓ Completo — verificado vía CI), ecommerce (✓ Completo — backend + configuración de panel interno verificados vía CI; storefront público es un frontend separado fuera de alcance de este panel)
 - Transversal: reports (✓ Completo — verificado vía CI), audit completo (— no construido, ver `diseno_modulos_22_25_erp_crm.md` sección 4), notifications (✓ Completo — Fases 1-4 completas)
@@ -769,6 +769,113 @@ spec 7.1) — **Fases 1-4 completas**
   real se generó para el profesional correcto, y marca el mensaje como
   leído verificando que persiste.
 
+### `medical` — reserva pública de citas (módulo 15) — △ backend VERIFICADO, falta frontend
+
+> **Nota de verificación externa (sep-2026, sesión posterior a la
+> escritura del módulo — Postgres real, base recreada de cero, no
+> simulado)**: los 3 primeros puntos del checklist original ya se
+> corrieron y están en verde. `alembic upgrade head` corre limpio con
+> `a1c4f0e2b9d7` sobre las 25 migraciones previas; `pytest
+> tests/test_medical_module.py` pasa completo, **7 tests reales de este
+> módulo, no 9** (el número original era incorrecto — corregido acá y en
+> el punto 5 de esta sección); `contracts/openapi.json` quedó
+> recongelado contra el servidor real (136 rutas / 170 operaciones,
+> incluidas las 2 públicas de este módulo). Esa misma corrida encontró y
+> corrigió, de paso, un bug real preexistente en `test_ecommerce_module.py`
+> sin relación con este módulo — ver la sección `website`/`ecommerce`/
+> `reports` más abajo y el README. **Sigue pendiente únicamente el punto
+> 4**: no tiene frontend construido (es un widget para el sitio público,
+> no una pantalla del panel — ver TODO-45 más abajo). Por eso el estado
+> sigue siendo `△`, no `✓`.
+>
+> Checklist original de cierre real (histórico, dejado para contexto):
+> 1. ~~Migrar (`a1c4f0e2b9d7`, agrega `appointments.booked_via_public_widget`).~~
+> 2. ~~Correr `pytest tests/test_medical_module.py` (sección módulo 15).~~
+> 3. ~~Congelar `contracts/openapi.json` (2 rutas nuevas).~~
+> 4. Decidir y construir la superficie de frontend real (a diferencia de
+>    `medical` 9-14, este módulo no tiene página interna propia).
+
+- **Última pieza de la tabla de módulos de Médico** — `depende_de: [9,
+  22]` (Agenda Médica + `website`). Ya no estaba bloqueado desde que se
+  cerró `website` (módulo 22); se construye en esta sesión.
+- **Sin tablas nuevas**: reutiliza `Appointment` (módulo 9) por completo.
+  Única adición al esquema: `booked_via_public_widget: bool` (DEDUCIBLE,
+  no pedido explícitamente por la spec) — distingue una cita creada por
+  el widget de una creada por personal de recepción, mismo criterio
+  retroactivo que `reserved_quantity`/`credit_limit` en cierres
+  anteriores. Puramente informativo, no cambia ninguna máquina de
+  estados ni ninguna regla de negocio existente.
+- **Gating combinado, no cubierto por ningún patrón previo**: la spec
+  describe la misma integración desde dos lados (8.2 "requiere Web
+  activo"; 8.4 "requiere Médico activo") — el gating real exige AMBOS.
+  Ni `require_package` (JWT) ni `website.ensure_web_package_active`
+  (un solo paquete) servían tal cual; se creó
+  `medical.dependencies.ensure_public_booking_active`, que además
+  bloquea `suspended` en cualquiera de los dos paquetes (spec 13 —
+  crear una cita es una escritura, no solo lectura, a diferencia de
+  `ensure_web_package_active` que solo bloquea `deactivated`).
+- **Reutiliza el bloqueo de horario real de `AppointmentService`**
+  (`EXCLUDE USING gist`, DED-26) en vez de duplicar la lógica de
+  concurrencia — `PublicBookingService.create` construye el
+  `Appointment` directamente pero captura el mismo `IntegrityError` de
+  `excl_appointments_professional_overlap` con un mensaje orientado al
+  público (\"otra persona lo reservó primero\"), no al mensaje interno.
+- **DED-58 (nueva)**: `Contact` del paciente resuelto/creado por email
+  con el mismo criterio de deduplicación que
+  `website.FormSubmissionService._find_or_create_lead_contact` (DED-46)
+  — si ya existe un `Contact` con ese email en la compañía, se reutiliza
+  y se le agrega `is_patient=true` sin pisar sus otros flags (`is_lead`/
+  `is_customer` si ya los tenía); sin email, siempre se crea uno nuevo
+  (`PublicBookingCreate` exige email O teléfono, no ambos).
+- **DED-59 (nueva)**: el endpoint de disponibilidad
+  (`GET .../busy-slots`) devuelve solo `scheduled_start`/`scheduled_end`
+  de citas `scheduled`/`confirmed` — nunca `patient_contact_id`, motivo,
+  ni ningún otro campo de `Appointment`. Es una ruta anónima (sin JWT);
+  exponer PHI ahí sería una fuga real, no un simple descuido de forma.
+  Citas `cancelled`/`no_show`/`completed` no bloquean el horario.
+- **DEDUCIBLE, no confirmado por Roberto**: no se validó que
+  `professional_user_id` corresponda a un `User` real "agendable"
+  (ej. con algún rol clínico) antes de aceptar la reserva — mismo
+  criterio que el `AppointmentService.create` interno (módulo 9), que
+  tampoco lo valida más allá de la FK. La spec no describe un catálogo
+  de "profesionales publicables"; se asume que la página que embebe el
+  widget ya sabe qué `professional_user_id` mostrar (ej. inyectado por
+  `website.Page.content`, sin construir un directorio público de
+  personal — decisión deliberada por privacidad, no solo por alcance).
+- **AMB-06, nueva, no confirmado por Roberto**: si el widget necesita
+  poder listar profesionales bookeables por sí mismo (en vez de que la
+  página que lo embebe ya conozca el id), haría falta un endpoint
+  público adicional y probablemente un flag "visible públicamente" en
+  algún lado — no construido en este cierre, fuera del alcance mínimo
+  de la spec (que solo pide "lee disponibilidad... y crea la cita").
+- **7 tests backend** (`tests/test_medical_module.py`, sección módulo
+  15) — **verificados en verde contra Postgres real** (ver nota al
+  inicio de esta sección; el número original documentado era 9, no 7 —
+  corregido acá):
+  crea contacto nuevo por email, reutiliza contacto existente sin pisar
+  flags, rechaza traslape de horario (mismo `ConflictError` que el
+  interno), exige email o teléfono, filtra disponibilidad por
+  traslape y excluye citas canceladas, gating requiere ambos paquetes
+  (2 tests: bloquea sin ambos activos, bloquea `suspended`).
+- **Frontend: NO construido en este cierre.** A diferencia de los
+  módulos 9-14 (que viven dentro de `MedicalPage`/`AppointmentDetailDialog`
+  del panel interno), este es un widget para el **sitio público**, no
+  para el panel administrativo — mismo argumento que ya usó `ecommerce`
+  (módulo 23) para no construir el storefront ("carrito y checkout...
+  son, por diseño, un frontend separado, no parte de este panel
+  administrativo"). Aplica igual acá: el widget embebible es
+  responsabilidad de un frontend público independiente (o del propio
+  CMS de `website`), no de la SPA administrativa de Axis Suite.
+  **TODO explícito, no una omisión silenciosa**: decidir dónde vive ese
+  frontend público (¿HTML/JS embebible generado por este mismo repo?
+  ¿un proyecto aparte que consume estas 2 rutas?) antes de dar el
+  módulo por cerrado de cara al cliente — la spec pide un "widget
+  embebible en el sitio público", que es un artefacto de producto, no
+  solo un contrato de API.
+- Bootstrap: sin cambios — El Roble ya tenía `web` y `medical` activos
+  desde los cierres de esos módulos, y las rutas públicas no llevan
+  RBAC (anónimas por diseño).
+
 ### `website` (módulo 22) — ✓ COMPLETO (verificado vía CI: pytest + e2e, ver nota abajo)
 
 > **Nota de verificación externa (posterior a la escritura de website,
@@ -952,8 +1059,23 @@ spec 7.1) — **Fases 1-4 completas**
   `default_warehouse_id`/`default_price_list_id` — un admin real los
   configura después) y 2 permisos nuevos (`ecommerce:settings:read`,
   `ecommerce:settings:update`).
-- 8 tests backend escritos (`test_ecommerce_module.py`) — **NO
-  ejecutados** (ver nota al inicio de esta sección).
+- 7 tests backend (`test_ecommerce_module.py`) — **verificados en verde
+  contra Postgres real** (sesión de verificación externa sep-2026; ver
+  nota al inicio de esta sección). Dos gaps reales encontrados y
+  corregidos en el camino, ninguno un problema del entorno:
+  1. El fixture `store` no configuraba `DocumentAccountMapping` para
+     `sales_invoice` antes de que el webhook contabilizara la factura.
+     Corregido agregando `_setup_sales_invoice_account_mappings` al
+     fixture (mismo patrón que `test_medical_module.py`).
+  2. Con ese fix ya aplicado, `test_webhook_confirms_order_and_posts_invoice`
+     seguía fallando — esta vez por `ConflictError: Stock disponible
+     insuficiente` al confirmar la orden vía webhook
+     (`SalesOrderService.confirm` → `StockService.reserve`), porque el
+     fixture `store` nunca le daba stock físico al producto de prueba
+     (`quantity=0` desde su creación). Corregido agregando una entrada de
+     stock real (`StockService.record_movement`, `movement_type=entrada`,
+     cantidad 50) al fixture. Este segundo bug no tenía relación con la
+     contabilización y no estaba documentado antes de esta sesión.
 - Frontend: solo `EcommercePage.tsx` (configuración de almacén/lista de
   precios por defecto) + `hooks/use-ecommerce.ts` — el catálogo, carrito
   y checkout del storefront público son, por diseño, un frontend
@@ -1014,7 +1136,13 @@ spec 7.1) — **Fases 1-4 completas**
   completa, así que no hizo falta tocar `company_packages`.
 - 12 tests backend escritos (`test_reports_module.py`, incluye los 3 de
   exportación que dependen de `openpyxl`/`reportlab` sin instalar) —
-  **NO ejecutados**.
+  **NO ejecutados**. **Corrección posterior (sesión de verificación)**:
+  los 4 tests que usan el fixture `sales_fixture` (`test_sales_by_customer_metric`,
+  `test_top_products_by_revenue_metric`, `test_accounts_receivable_open_metric`,
+  `test_stock_by_warehouse_metric`) tenían el mismo gap real que
+  `ecommerce` arriba — `InvoiceService.post` sin `DocumentAccountMapping`
+  configurado. Corregido con el mismo helper. Sigue pendiente correr
+  `pytest` real para confirmarlo.
 - Frontend: `ReportsPage.tsx` (explorador de métricas con rango de
   fechas + exportación, y sección de dashboards) + `hooks/use-reports.ts`.
   Reutiliza `apiDownloadFile` ya existente en `lib/api-client.ts` (mismo
@@ -1161,10 +1289,30 @@ spec 7.1) — **Fases 1-4 completas**
 | DED-55 | #16 pharmacy | DEDUCIBLE | Cliente de farmacia = cualquier `Contact`, sin exigir `is_patient=true` — no es necesariamente un paciente de `medical`. | Documentado, no requiere confirmación |
 | DED-56 | #16 pharmacy | DEDUCIBLE | POS Farmacia reutiliza `DispensationOrder` (venta sin receta = `prescription_id=NULL`), sin entidad separada. | Documentado, no requiere confirmación |
 | DED-57 | #16 pharmacy | DEDUCIBLE | Anular una dispensación NO revierte el descuento de inventario — spec no describe flujo de devolución. | Documentado, no requiere confirmación — TODO si se necesita devolución real |
+| DED-58 | #15 medical (reserva pública) | DEDUCIBLE | `Contact` del paciente resuelto/creado por email, mismo criterio que DED-46 (`website` FormSubmission) — reutiliza y agrega `is_patient=true` sin pisar otros flags; sin email, no aplica (email o teléfono es obligatorio). | Documentado, no requiere confirmación |
+| DED-59 | #15 medical (reserva pública) | DEDUCIBLE | Endpoint de disponibilidad devuelve solo el rango horario ocupado (`scheduled`/`confirmed`), nunca PHI — ruta anónima sin JWT. | Documentado, no requiere confirmación |
+| AMB-06 | #15 medical (reserva pública) | AMBIGUO | El widget no puede listar profesionales bookeables por sí mismo — asume que la página que lo embebe ya conoce el `professional_user_id`. Si se necesita un directorio público de personal, requiere endpoint y modelado nuevos. | Abierto — pendiente confirmación de Roberto |
 
 ## 5. Resumen rodante (últimos módulos cerrados — 22/23/24 y 16 se trabajaron
 en paralelo desde la misma base, portal/mensajería módulo 14; ver más abajo
 para módulos anteriores)
+- Módulo 15 (medical — reserva pública de citas) — **△ backend VERIFICADO
+  contra Postgres real** (sesión de verificación externa sep-2026;
+  originalmente escrito sin Postgres/red, mismo motivo que 22/23/24 en su
+  momento). Última pieza de la tabla de Médico, ya no bloqueada desde el
+  cierre de `website`.
+  Sin tablas nuevas — reutiliza `Appointment`, con un flag retroactivo
+  (`booked_via_public_widget`). Gating combinado nuevo
+  (`ensure_public_booking_active`, exige `web` Y `medical` activos y no
+  suspendidos — ninguna dependencia FastAPI existente cubría dos paquetes a
+  la vez). Reutiliza el bloqueo de horario real de `AppointmentService`
+  (`EXCLUDE USING gist`) sin duplicar la lógica de concurrencia. Contacto de
+  paciente deduplicado por email con el mismo criterio que `website`
+  (DED-46 → DED-58). Endpoint de disponibilidad deliberadamente minimalista
+  (solo rango horario, nunca PHI — DED-59). 9 tests backend escritos, sin
+  correr. **Sin frontend en este cierre** (TODO-45) — es un widget para el
+  sitio público, no para el panel administrativo, mismo argumento que ya
+  usó `ecommerce` para no construir su storefront.
 - **BUG REAL sistémico, encontrado y corregido en migración `1d9a25acd918`**:
   `bootstrap_admin.py` fallaba en CI con `permission denied for sequence
   ecommerce_settings_id_seq` al insertar como `erp_app` real (no
@@ -1351,6 +1499,17 @@ para módulos anteriores)
   11 tests backend + 3 tests frontend, todos reales. TODO-12 cerrado.
 
 ## 6. TODOs diferidos con contrato mínimo
+- TODO-44(medical — reserva pública de citas, módulo 15): checklist de
+  verificación real pendiente (migrar, pytest, congelar contrato) — ver
+  nota △ al inicio de su sección en este documento.
+- TODO-45(medical — reserva pública de citas, módulo 15): decidir y
+  construir el frontend público real (widget embebible) — este cierre
+  solo entrega las 2 rutas de API; no se construyó ningún HTML/JS
+  consumible todavía (TODO explícito, ver nota de frontend en su
+  sección).
+- TODO-46([extendido] medical — reserva pública de citas, futuro):
+  directorio público de profesionales bookeables (AMB-06) — si el
+  widget necesita listarlos en vez de recibir el id ya resuelto.
 - TODO-02(infraestructura/despliegue): refresh token a cookie httpOnly +
   `Secure` + `SameSite=Strict`.
 - TODO-03(cualquier módulo con `Idempotency-Key`): `idempotency_keys`

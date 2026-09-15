@@ -2,12 +2,14 @@
 Tests de integración del módulo ecommerce — contra PostgreSQL real, mismo
 patrón que tests/test_website_module.py y tests/test_contacts_module.py.
 
-NOTA DE ESTE CIERRE: escritos y revisados estáticamente (sintaxis, imports,
-consistencia de firmas con services.py/models.py de ecommerce, sales,
-accounting e inventory) pero NO ejecutados — mismo motivo y misma
-advertencia que en `test_website_module.py` (sin Postgres/red en este
-entorno). Correr `pytest tests/test_ecommerce_module.py` contra una base
-real antes de marcar el módulo 23 como (✓) en STATE.md.
+VERIFICADO contra Postgres real (sesión de verificación externa,
+sep-2026, cierre del módulo 15): 7/7 tests de este archivo en verde tras
+dos fixes reales encontrados en esa corrida —
+`_setup_sales_invoice_account_mappings` (contabilización de la factura) y
+el stock inicial del fixture `store` (`StockService.record_movement`,
+sin el cual `test_webhook_confirms_order_and_posts_invoice` fallaba con
+`ConflictError: Stock disponible insuficiente`, no relacionado con la
+contabilización).
 """
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ from app.ecommerce import models as ecommerce_models
 from app.ecommerce import schemas as ecommerce_schemas
 from app.ecommerce.services import CartService, CatalogService, CheckoutService, EcommerceSettingsService, WebhookService
 from app.inventory import schemas as inventory_schemas
-from app.inventory.services import ProductService, WarehouseService
+from app.inventory.services import ProductService, StockService, WarehouseService
 from app.sales import schemas as sales_schemas
 from app.sales.services import PriceListService
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
@@ -73,7 +75,43 @@ async def store(db, company):
         db, company_id=company.id,
         payload=ecommerce_schemas.EcommerceSettingsUpdate(default_warehouse_id=warehouse.id, default_price_list_id=price_list.id),
     )
+    await _setup_sales_invoice_account_mappings(db, company)
+    # Stock físico real — sin esto, SalesOrderService.confirm() (llamado
+    # por WebhookService.handle_payment_event al procesar un pago) rechaza
+    # la reserva con ConflictError("Stock disponible insuficiente"), porque
+    # todo producto nuevo arranca en quantity=0 (hallazgo real de esta
+    # sesión de verificación: test_webhook_confirms_order_and_posts_invoice
+    # fallaba en Postgres real pese a que el fix de DocumentAccountMapping
+    # ya estaba aplicado — la causa era esta, no la contabilización).
+    await StockService.record_movement(
+        db, company_id=company.id, created_by=None,
+        payload=inventory_schemas.StockMovementCreate(
+            product_id=product.id, warehouse_id=warehouse.id,
+            movement_type=inventory_schemas.MovementTypeEnum.entrada,
+            quantity=Decimal("50"), reference="Stock inicial de prueba (fixture store)",
+        ),
+    )
     return {"warehouse": warehouse, "product": product, "price_list": price_list, "settings": settings}
+
+
+async def _setup_sales_invoice_account_mappings(db, company):
+    """Fixture mínima real del motor de asientos (mismo patrón que
+    tests/test_medical_module.py::_setup_sales_invoice_account_mappings) —
+    sin esto, `WebhookService.handle_payment_event` no puede contabilizar
+    la factura real que genera al confirmar el pago (document_type
+    `sales_invoice`, ver app/accounting/services.py)."""
+    from app.accounting import models as accounting_models
+
+    for role, name in [("receivable", "Cuentas por Cobrar"), ("income", "Ingresos"), ("tax", "Impuestos por Pagar")]:
+        account = accounting_models.Account(
+            company_id=company.id, code=f"TEST-{role}", name=name, account_type=role,
+        )
+        db.add(account)
+        await db.flush()
+        db.add(accounting_models.DocumentAccountMapping(
+            company_id=company.id, document_type="sales_invoice", role=role, account_id=account.id,
+        ))
+    await db.commit()
 
 
 @pytest.mark.asyncio

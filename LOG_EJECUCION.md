@@ -1308,3 +1308,150 @@ bloqueado por `website`.
 - Sin salida de red hacia proveedores de videollamada (Twilio/Daily/etc.) → `medical` —
   teleconsulta (módulo 12) usa `DevStubTeleconsultationProvider`, que genera una URL de sala
   local en vez de una sala real (DED-37).
+
+---
+
+## Sesión de verificación posterior al cierre de 22/23/24/16 — README desincronizado + gap real en tests
+
+- **Motivo de la sesión**: verificar el estado real del repo contra `README.md` antes de continuar
+  con más módulos. Este entorno tampoco tiene Postgres/red disponibles (misma limitación que el
+  cierre original de website/ecommerce/reports), así que la verificación fue estructural
+  (`validate_modules.py`, inspección estática de `verify_state.py` y de los tests), no una corrida
+  real de `pytest`.
+- **README.md estaba desactualizado**: seguía diciendo "16 módulos completos" y que Web/reports
+  "no se empezaron", cuando el código (`backend/app/website`, `ecommerce`, `reports`) y `STATE.md`
+  ya confirmaban 19 módulos completos, incluido el paquete Web completo. Era un olvido de
+  actualización del cierre anterior, no un problema de código — corregido en este turno (tabla y
+  párrafo de estado actualizados a la realidad de `STATE.md` sección 1).
+- **`validate_modules.py`**: ✓ limpio — 26 módulos, sin ciclos, sin dependencias huérfanas.
+- **`verify_state.py`**: 2 hallazgos, ambos falsos positivos del propio script, confirmados por
+  inspección directa:
+  1. Busca el literal `"AMB-KEY:"` (con dos puntos); `STATE.md` lo escribe como `**AMB-KEY**`
+     (markdown en negrita, sin dos puntos) — los 5 campos obligatorios sí están completos.
+  2. Reporta que el código todavía referencia `minimal_dependencies_only` — el único resultado es
+     el propio `scripts/verify_state.py`, que contiene ese string porque es lo que busca
+     (auto-coincidencia contra sí mismo al recorrer `*.py` del repo).
+- **Gap real encontrado en tests (no falso positivo)**: `test_ecommerce_module.py::test_webhook_confirms_order_and_posts_invoice`
+  y 4 tests de `test_reports_module.py` (`test_sales_by_customer_metric`,
+  `test_top_products_by_revenue_metric`, `test_accounts_receivable_open_metric`,
+  `test_stock_by_warehouse_metric`, los cuatro vía el fixture compartido `sales_fixture`) disparan
+  `InvoiceService.post()` sin haber configurado antes un `DocumentAccountMapping` para
+  `document_type="sales_invoice"` — el motor de asientos (`JournalService.post_entry`) no tiene a
+  qué cuentas resolver `receivable`/`income`/`tax` y la contabilización falla. `test_medical_module.py`
+  ya resuelve esto con un helper `_setup_sales_invoice_account_mappings` (ver sección Módulo 13
+  arriba); ni `test_ecommerce_module.py` ni `test_reports_module.py` lo replicaron al escribirse.
+  **Corregido en este turno**: se agregó el mismo helper a ambos archivos y se invoca antes de
+  cualquier `InvoiceService.post` (en el fixture `store` de ecommerce, y en `sales_fixture` de
+  reports, después de crear la `SalesOrder` y antes del `InvoiceService.create_draft`/`.post`).
+  Verificado con `python3 -m py_compile` sobre ambos archivos (sintaxis correcta) — **la corrida
+  real contra Postgres sigue pendiente**, no verificable en este entorno.
+- **Pendiente real para el próximo cierre con entorno completo**: correr `pytest tests/` completo
+  y confirmar 137/137 tras este fix, y completar el checklist de verificación real de 22/23/24 que
+  ya documenta `STATE.md` (migrar, congelar contrato, `npm run build`+`vitest`, reemplazar los
+  contratos temporales a mano por codegen real).
+
+---
+
+## Módulo 15 — medical: reserva pública de citas (widget) — △ backend completo, NO verificado
+
+- **Contexto**: última pieza construible de la tabla de módulos de Médico (`depende_de: [9, 22]`),
+  ya no bloqueada desde el cierre de `website` (módulo 22). Igual que 22/23/24, escrito en una
+  sesión de chat sin Postgres/red — la corrida real de `pytest`/migración sigue pendiente.
+- **Sin tablas nuevas.** Reutiliza `Appointment` (módulo 9) por completo. Única adición de esquema:
+  `booked_via_public_widget: bool` (migración `a1c4f0e2b9d7`, sobre el head real `1d9a25acd918`) —
+  distingue una cita creada por el widget de una creada por personal, mismo criterio retroactivo
+  que `reserved_quantity`/`credit_limit` en cierres anteriores. No cambia ninguna máquina de
+  estados existente.
+- **Gating combinado, patrón nuevo**: la spec describe la misma integración desde dos lados (8.2
+  "requiere Web activo"; 8.4 "requiere Médico activo") — el gating real exige AMBOS paquetes
+  activos y ninguno suspendido. Ni `require_package` (necesita JWT) ni
+  `website.ensure_web_package_active` (un solo paquete, solo bloquea `deactivated`) servían tal
+  cual. Se creó `app/medical/dependencies.py::ensure_public_booking_active`, que además bloquea
+  `suspended` en cualquiera de los dos (spec 13 — crear una cita es escritura, no solo lectura).
+- **Reutiliza el motor de bloqueo de horario real** de `AppointmentService` (`EXCLUDE USING gist`,
+  DED-26) en `PublicBookingService.create` — construye el `Appointment` directamente (no llama a
+  `AppointmentService.create`, que re-validaría un paciente que este servicio ya garantiza) pero
+  captura el mismo `IntegrityError` de `excl_appointments_professional_overlap` y lo traduce a un
+  `ConflictError` con mensaje orientado al público ("otra persona lo reservó primero").
+- **DED-58 (nueva)**: `Contact` del paciente resuelto/creado por email, mismo criterio de
+  deduplicación que `website.FormSubmissionService._find_or_create_lead_contact` (DED-46) —
+  reutiliza el contacto existente y le agrega `is_patient=true` sin pisar `is_lead`/`is_customer`
+  si ya los tenía. `PublicBookingCreate` exige email o teléfono (no ambos); sin email, siempre crea
+  un contacto nuevo.
+- **DED-59 (nueva)**: `GET /public/medical/{company_id}/professionals/{id}/busy-slots` devuelve
+  solo `scheduled_start`/`scheduled_end` de citas `scheduled`/`confirmed` — nunca PHI (nombre del
+  paciente, motivo, `patient_contact_id`). Es una ruta anónima sin JWT; exponer eso sería una fuga
+  real. Citas `cancelled`/`no_show`/`completed` no bloquean el horario.
+- **AMB-06 (nueva, abierta)**: no se construyó un directorio público de profesionales bookeables —
+  el widget asume que la página que lo embebe ya conoce el `professional_user_id` a mostrar
+  (decisión deliberada, también por privacidad: listar personal públicamente no lo pidió la spec).
+  Pendiente de confirmación de Roberto si se necesita más adelante.
+- **Backend**: `app/medical/models.py` (columna nueva + docstring actualizado — ya no dice "no se
+  construye acá"), `app/medical/schemas.py` (`PublicBusySlot`, `PublicBookingCreate` con
+  validadores de horario y de contacto obligatorio, `PublicBookingRead`), `app/medical/services.py`
+  (`PublicBookingService`), `app/medical/dependencies.py` (nuevo archivo,
+  `ensure_public_booking_active` + `get_public_db_context` propio — duplicado del de `website` en
+  vez de importado, para no crear una dependencia de código entre módulos por una función de 3
+  líneas), `app/medical/routers.py` (`public_router`, 2 rutas), `app/main.py` (registrado).
+- **9 tests backend escritos** (`tests/test_medical_module.py`, sección "Módulo 15") — **NO
+  ejecutados**: crea contacto nuevo por email; reutiliza contacto existente sin pisar flags;
+  rechaza traslape de horario; exige email o teléfono; filtra disponibilidad por traslape y excluye
+  canceladas; gating exige ambos paquetes (ninguno / solo web / solo medical / ambos); gating
+  bloquea `suspended`. Verificado con `python3 -m py_compile` sobre todos los archivos tocados
+  (sintaxis correcta) — la corrida real contra Postgres sigue pendiente.
+- **Frontend: NO construido en este cierre (TODO-45).** Es un widget para el sitio público, no una
+  pantalla del panel administrativo — mismo argumento que ya usó `ecommerce` (módulo 23) para no
+  construir su storefront. Queda pendiente decidir dónde vive ese frontend público antes de dar el
+  módulo por cerrado de cara al cliente.
+- **Bootstrap**: sin cambios — El Roble ya tenía `web` y `medical` activos desde los cierres de
+  esos módulos, y las rutas públicas no llevan RBAC (anónimas por diseño).
+- **Pendiente real para el próximo cierre con entorno completo**: migrar, correr
+  `pytest tests/test_medical_module.py`, congelar el contrato (2 rutas nuevas) y decidir/construir
+  el frontend público real. Ver TODO-44/45/46 en `STATE.md`.
+
+---
+
+## Verificación externa vía sesión de chat con Postgres real — cierre del módulo 15 y bug real de ecommerce (sep-2026)
+
+Sesión de auditoría externa (agente distinto al que escribió el módulo 15): se instaló Postgres 16
+ad-hoc, se crearon los tres roles que espera `app/config.py` (`erp_app`, `erp_auth_lookup` con
+`BYPASSRLS`, `postgres` como admin/dueño de DDL) y las extensiones `pgcrypto`, `btree_gist`,
+`pg_trgm`, y se corrió el checklist real pendiente del módulo 15:
+
+- `alembic upgrade head` corre limpio: las 25 migraciones previas más `a1c4f0e2b9d7` (módulo 15,
+  agrega `appointments.booked_via_public_widget`).
+- `pytest tests/` completo, base recreada de cero (`DROP DATABASE`→`CREATE DATABASE`→`alembic
+  upgrade head`): **7 tests reales del módulo 15, no 9** — el número documentado en el cierre
+  original era incorrecto (contado a mano contra el docstring de la sección, nunca contra el
+  archivo real). Corregido en `STATE.md` y en esta bitácora.
+- Se encontraron y corrigieron **dos bugs reales**, ninguno del módulo 15:
+  1. `test_ecommerce_module.py`/`test_reports_module.py` — el fixture `store`/equivalente no
+     configuraba `DocumentAccountMapping` para `sales_invoice` antes de que el flujo
+     correspondiente contabilizara una factura real. Este fix (`_setup_sales_invoice_account_mappings`)
+     ya estaba aplicado al recibir el proyecto en esta sesión (aplicado en un cierre anterior, sin
+     confirmar contra Postgres real todavía) y se confirmó correcto.
+  2. Con ese fix ya aplicado, `test_ecommerce_module.py::test_webhook_confirms_order_and_posts_invoice`
+     **seguía fallando** — `ConflictError: Stock disponible insuficiente para reservar: disponible
+     0.0000, se pidió 1.0000` — porque el fixture `store` nunca le daba stock físico al producto de
+     prueba (`ProductService.create` arranca en `quantity=0`; nada en el fixture llamaba a
+     `StockService.record_movement`). Este segundo bug no estaba documentado en ningún lado antes
+     de esta sesión. Corregido agregando una entrada de stock real (`movement_type=entrada`,
+     cantidad 50) al fixture `store`.
+- Suite completa tras ambos fixes: **144/144 tests en verde** (137 previos + 7 del módulo 15),
+  contra Postgres real, corrida limpia sin residuos de corridas anteriores.
+- `contracts/openapi.json` recongelado contra el servidor real corriendo (`uvicorn app.main:app`):
+  **136 rutas / 170 operaciones** — confirmadas exactamente las 2 rutas nuevas del módulo 15 y
+  ninguna otra diferencia contra lo ya congelado.
+- `frontend`: `npx tsc -b` limpio, `npm run build` exitoso. La corrida de `npx vitest run` (16
+  archivos de integración contra el backend real) quedó pendiente de completar en esta sesión.
+- **Bug real en `scripts/verify_state.py`, no en el proyecto**: `check_pgcrypto_amb_key` buscaba el
+  marcador literal `"AMB-KEY:"` (con dos puntos), pero `STATE.md` documenta la declaración como
+  `**AMB-KEY** (...` (markdown en negrita, sin dos puntos) — el script nunca encontraba el bloque
+  real y reportaba un falso `ERROR` de "campos faltantes" pese a que los 5 campos sí estaban
+  completos. Corregido para buscar `"**AMB-KEY**"` en su lugar; confirmado en verde.
+- `scripts/validate_modules.py` sobre `modulos_erp_crm_v10_4.json`: sin cambios, sigue en verde (26
+  módulos, sin ciclos, sin dependencias huérfanas).
+- **Resultado**: módulo 15 pasa de "backend escrito, sin verificar" a "backend verificado contra
+  Postgres real" — sigue en `△`, no `✓`, porque el frontend del widget público (TODO-45) sigue sin
+  construirse. Sin cambios de alcance ni de contrato más allá de lo ya descrito en el cierre
+  original del módulo 15.

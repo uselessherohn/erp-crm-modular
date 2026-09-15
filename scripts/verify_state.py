@@ -85,7 +85,15 @@ def check_pgcrypto_amb_key(state_text: str) -> list[Finding]:
         return findings
 
     required_fields = ["key_location", "rotation_period_days", "owner", "rekey_plan", "backup_policy"]
-    amb_key_block = _extract_after_marker(state_text, "AMB-KEY:")
+    # STATE.md documenta la declaración real como "**AMB-KEY** (..."
+    # (markdown en negrita, sin dos puntos), no "AMB-KEY:" — y la palabra
+    # "AMB-KEY" también aparece antes, en una referencia cruzada ("ver
+    # AMB-KEY más abajo") que no contiene los 5 campos. El marcador original
+    # ni matcheaba ni apuntaba a la ocurrencia correcta, y producía un falso
+    # ERROR incluso con los 5 campos completos (hallazgo real de la sesión
+    # de verificación externa, sep-2026). Se busca la declaración en negrita
+    # específicamente para no engancharse con una referencia cruzada previa.
+    amb_key_block = _extract_after_marker(state_text, "**AMB-KEY**")
     missing = [f for f in required_fields if f"{f}=" not in amb_key_block]
 
     if missing:

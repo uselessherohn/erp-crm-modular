@@ -25,6 +25,7 @@ from app.core import schemas as core_schemas
 from app.core.services import UserService
 from app.database import AsyncSessionLocal
 from app.medical import schemas as medical_schemas
+from app.medical.dependencies import ensure_public_booking_active
 from app.medical.services import (
     AppointmentService,
     ClinicalRecordService,
@@ -33,10 +34,11 @@ from app.medical.services import (
     MedicalBillingService,
     PatientMessageService,
     PrescriptionService,
+    PublicBookingService,
     TeleconsultationService,
     professional_has_treated,
 )
-from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from app.shared.exceptions import ConflictError, NotFoundError, PackageNotLicensedError, PackageSuspendedError, ValidationError
 
 
 @pytest_asyncio.fixture
@@ -1103,3 +1105,159 @@ async def test_message_requires_patient_flag(db, company, professional):
             ),
             author_user_id=professional.id,
         )
+
+
+# ---------------------------------------------------------------------------
+# Módulo 15 — Reserva Pública de Citas
+# ---------------------------------------------------------------------------
+async def _activate_packages(db, company, *packages, status=None):
+    """Inserta filas reales de `company_packages` — mismo patrón que
+    `test_core_module.py::test_require_package_blocks_uncontracted_and_deactivated`."""
+    status = status or core_models.PackageStatusEnum.active
+    for pkg in packages:
+        db.add(core_models.CompanyPackage(company_id=company.id, package=pkg, status=status))
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_public_booking_creates_new_patient_contact(db, company, professional):
+    await _activate_packages(db, company, "web", "medical")
+
+    booking = await PublicBookingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.PublicBookingCreate(
+            professional_user_id=professional.id,
+            scheduled_start=_BASE, scheduled_end=_BASE + timedelta(minutes=30),
+            reason="Consulta general", patient_name="Paciente Widget",
+            patient_email="paciente.widget@test.hn", patient_phone=None,
+        ),
+    )
+    assert booking.booked_via_public_widget is True
+    assert booking.status == "scheduled"
+
+    result = await db.execute(
+        text("SELECT name, is_patient FROM contacts WHERE email = :e"), {"e": "paciente.widget@test.hn"}
+    )
+    row = result.one()
+    assert row.name == "Paciente Widget"
+    assert row.is_patient is True
+
+
+@pytest.mark.asyncio
+async def test_public_booking_reuses_existing_contact_by_email_without_clobbering_flags(db, company, professional):
+    await _activate_packages(db, company, "web", "medical")
+
+    existing = await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(name="Cliente Existente", email="cliente.existente@test.hn", is_customer=True),
+        created_by=None,
+    )
+    assert existing.is_patient is False
+
+    booking = await PublicBookingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.PublicBookingCreate(
+            professional_user_id=professional.id,
+            scheduled_start=_BASE, scheduled_end=_BASE + timedelta(minutes=30),
+            patient_name="Nombre Distinto En El Widget", patient_email="cliente.existente@test.hn", patient_phone=None,
+        ),
+    )
+
+    result = await db.execute(
+        text("SELECT id, is_customer, is_patient FROM contacts WHERE email = :e"), {"e": "cliente.existente@test.hn"}
+    )
+    row = result.one()
+    assert row.id == existing.id, "Debe reutilizar el contacto existente, no duplicarlo"
+    assert row.is_customer is True, "No debe pisar el flag is_customer ya existente"
+    assert row.is_patient is True, "Debe ganar is_patient sin perder los demás flags"
+
+
+@pytest.mark.asyncio
+async def test_public_booking_rejects_overlapping_slot(db, company, professional):
+    await _activate_packages(db, company, "web", "medical")
+
+    await PublicBookingService.create(
+        db, company_id=company.id,
+        payload=medical_schemas.PublicBookingCreate(
+            professional_user_id=professional.id,
+            scheduled_start=_BASE, scheduled_end=_BASE + timedelta(minutes=30),
+            patient_name="Primer Paciente", patient_email="primero@test.hn", patient_phone=None,
+        ),
+    )
+
+    with pytest.raises(ConflictError):
+        await PublicBookingService.create(
+            db, company_id=company.id,
+            payload=medical_schemas.PublicBookingCreate(
+                professional_user_id=professional.id,
+                scheduled_start=_BASE + timedelta(minutes=15), scheduled_end=_BASE + timedelta(minutes=45),
+                patient_name="Segundo Paciente", patient_email="segundo@test.hn", patient_phone=None,
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_public_booking_requires_email_or_phone(db, company, professional):
+    with pytest.raises(ValueError):
+        medical_schemas.PublicBookingCreate(
+            professional_user_id=professional.id,
+            scheduled_start=_BASE, scheduled_end=_BASE + timedelta(minutes=30),
+            patient_name="Sin Contacto", patient_email=None, patient_phone=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_public_busy_slots_filters_by_overlap_and_excludes_cancelled(db, company, patient, professional):
+    scheduled = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE, _BASE + timedelta(minutes=30)),
+        created_by=None,
+    )
+    cancelled = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE + timedelta(hours=2), _BASE + timedelta(hours=2, minutes=30)),
+        created_by=None,
+    )
+    await AppointmentService.cancel(
+        db, company_id=company.id, appointment_id=cancelled.id,
+        payload=medical_schemas.AppointmentCancel(cancellation_reason="Paciente no puede asistir"),
+    )
+
+    # Fuera de rango: no debe aparecer.
+    outside = await AppointmentService.create(
+        db, company_id=company.id,
+        payload=_appt_payload(patient.id, professional.id, _BASE + timedelta(hours=5), _BASE + timedelta(hours=5, minutes=30)),
+        created_by=None,
+    )
+
+    busy = await PublicBookingService.list_busy_slots(
+        db, company_id=company.id, professional_user_id=professional.id,
+        date_from=_BASE - timedelta(hours=1), date_to=_BASE + timedelta(hours=3),
+    )
+    busy_ids = {a.id for a in busy}
+    assert scheduled.id in busy_ids
+    assert cancelled.id not in busy_ids, "Una cita cancelada no debería bloquear el horario en el widget público"
+    assert outside.id not in busy_ids
+
+
+@pytest.mark.asyncio
+async def test_ensure_public_booking_active_requires_both_web_and_medical(db, company):
+    with pytest.raises(PackageNotLicensedError):
+        await ensure_public_booking_active(db, company_id=company.id)
+
+    await _activate_packages(db, company, "web")
+    with pytest.raises(PackageNotLicensedError):
+        await ensure_public_booking_active(db, company_id=company.id)
+
+    await _activate_packages(db, company, "medical")
+    await ensure_public_booking_active(db, company_id=company.id)  # no debe lanzar
+
+
+@pytest.mark.asyncio
+async def test_ensure_public_booking_active_blocks_suspended(db, company):
+    db.add(core_models.CompanyPackage(company_id=company.id, package="web", status=core_models.PackageStatusEnum.active))
+    db.add(core_models.CompanyPackage(company_id=company.id, package="medical", status=core_models.PackageStatusEnum.suspended))
+    await db.commit()
+
+    with pytest.raises(PackageSuspendedError):
+        await ensure_public_booking_active(db, company_id=company.id)

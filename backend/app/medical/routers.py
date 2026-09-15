@@ -13,6 +13,8 @@ condición de datos además del permiso.
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select
@@ -29,6 +31,7 @@ from app.core.dependencies import (
 from app.core.models import User
 from app.core.services import AttachmentService
 from app.medical import schemas
+from app.medical.dependencies import ensure_public_booking_active, get_public_db_context
 from app.medical.services import (
     AppointmentService,
     ClinicalRecordService,
@@ -37,6 +40,7 @@ from app.medical.services import (
     MedicalBillingService,
     PatientMessageService,
     PrescriptionService,
+    PublicBookingService,
     TeleconsultationService,
     get_by_appointment,
     professional_has_treated,
@@ -575,3 +579,40 @@ async def mark_patient_message_read(
 ) -> schemas.PatientMessageRead:
     message = await PatientMessageService.mark_read(db, company_id=company_id, message_id=message_id)
     return schemas.PatientMessageRead.model_validate(message)
+
+
+# ---------------------------------------------------------------------------
+# Módulo 15 — Reserva Pública de Citas (widget embebible, sin JWT)
+# ---------------------------------------------------------------------------
+public_router = APIRouter(prefix="/public/medical", tags=["medical-public"])
+
+
+@public_router.get("/{company_id}/professionals/{professional_user_id}/busy-slots", response_model=list[schemas.PublicBusySlot])
+async def get_public_busy_slots(
+    company_id: int,
+    professional_user_id: int,
+    date_from: datetime,
+    date_to: datetime,
+    db: AsyncSession = Depends(get_public_db_context),
+) -> list[schemas.PublicBusySlot]:
+    await ensure_public_booking_active(db, company_id=company_id)
+    slots = await PublicBookingService.list_busy_slots(
+        db, company_id=company_id, professional_user_id=professional_user_id, date_from=date_from, date_to=date_to,
+    )
+    return [schemas.PublicBusySlot.model_validate(s) for s in slots]
+
+
+@public_router.post("/{company_id}/bookings", response_model=schemas.PublicBookingRead, status_code=201)
+async def create_public_booking(
+    company_id: int,
+    payload: schemas.PublicBookingCreate,
+    db: AsyncSession = Depends(get_public_db_context),
+) -> schemas.PublicBookingRead:
+    await ensure_public_booking_active(db, company_id=company_id)
+    appointment = await PublicBookingService.create(db, company_id=company_id, payload=payload)
+    return schemas.PublicBookingRead(
+        appointment_id=appointment.id,
+        scheduled_start=appointment.scheduled_start,
+        scheduled_end=appointment.scheduled_end,
+        status=appointment.status,
+    )
