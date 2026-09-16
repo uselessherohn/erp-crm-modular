@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo — Widget de Reserva Pública de Citas</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #f4f1ea;
+        margin: 0;
+        padding: 48px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+      }
+      main { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+      h1 { font-size: 20px; margin: 0; }
+      p.lead { color: #55655f; font-size: 14px; max-width: 480px; text-align: center; margin: 0 0 8px; }
+      .config-note {
+        font-size: 12.5px; color: #55655f; background: #fff; border: 1px solid #dde3e0;
+        border-radius: 8px; padding: 10px 14px; max-width: 480px;
+      }
+      code { background: #eee; padding: 1px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Reservá tu cita — Clínica de prueba</h1>
+      <p class="lead">
+        Esta es una página de demo local para probar el widget de forma manual
+        en un navegador real. No forma parte de ningún sitio de cliente.
+      </p>
+      <div class="config-note">
+        Editá los atributos <code>data-*</code> de abajo (o los query params
+        <code>?apiBase=&companyId=&professionalId=</code> de esta URL) para
+        apuntar a tu backend local antes de abrir este archivo.
+      </div>
+
+      <div
+        id="widget-mount"
+        data-axis-medical-booking
+        data-api-base="http://127.0.0.1:8000"
+        data-company-id="1"
+        data-professional-id="1"
+      ></div>
+    </main>
+
+    <script>
+      // Permite sobreescribir la config vía query string para no tener que
+      // editar el HTML en cada prueba manual, ej.:
+      //   demo.html?apiBase=http://127.0.0.1:8000&companyId=2&professionalId=1
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var mount = document.getElementById("widget-mount");
+        ["apiBase", "companyId", "professionalId", "slotMinutes", "startHour", "endHour", "daysAhead", "locale"].forEach(
+          function (key) {
+            var value = params.get(key);
+            if (value) {
+              var attr = "data-" + key.replace(/[A-Z]/g, function (m) { return "-" + m.toLowerCase(); });
+              mount.setAttribute(attr, value);
+            }
+          }
+        );
+      })();
+    </script>
+    <script src="./widget.js"></script>
+  </body>
+</html>

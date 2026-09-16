@@ -89,13 +89,18 @@ describe("AccountsPage — configuración real de accounting contra backend en 1
     await user.click(await screen.findByRole("option", { name: new RegExp(accountCode) }));
     await user.click(screen.getByRole("button", { name: /^guardar mapeo$/i }));
 
-    // Timeout generoso — esta suite corre en serie (fileParallelism:false)
-    // contra un backend/Postgres COMPARTIDO sin truncar entre archivos, así
-    // que cuantos más módulos de integración se agreguen al proyecto, más
-    // datos acumulados hay que renderizar en esta tabla antes de esta
-    // aserción. No es una regresión de este test — es un costo estructural
-    // conocido del enfoque de integración real sin fixtures aisladas.
-    await waitFor(() => expect(screen.getByText("Factura de venta")).toBeInTheDocument(), { timeout: 20000 });
+    // Se espera por `accountCode` (único por corrida, con sufijo de
+    // timestamp) en vez de por la etiqueta genérica del documento
+    // ("Factura de venta") — esa etiqueta ignora el rol del mapeo, así
+    // que en cuanto exista más de una fila con `document_type=sales_invoice`
+    // (aunque sea con otro rol, creada por otro archivo de test de esta
+    // misma suite, corriendo en serie contra el mismo backend/Postgres
+    // compartido sin truncar entre archivos) `getByText` deja de ser
+    // único y el test se vuelve flaky — reproducido de verdad en esta
+    // sesión de verificación externa (sep-2026): no dependía de correr
+    // la suite completa varias veces, alcanzaba con el orden real de
+    // ejecución de archivos (que no es necesariamente el alfabético).
+    await waitFor(() => expect(screen.getByText(new RegExp(accountCode))).toBeInTheDocument(), { timeout: 20000 });
 
     const mappings = await apiRequest<Array<{ document_type: string; role: string; account_id: number }>>(
       "/accounting/document-account-mappings"

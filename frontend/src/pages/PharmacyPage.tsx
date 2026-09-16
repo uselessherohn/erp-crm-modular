@@ -9,6 +9,9 @@ import {
   useMarkControlledSubstance,
   useUnmarkControlledSubstance,
   useControlledSubstanceLog,
+  useProductActiveIngredients,
+  useSetProductActiveIngredient,
+  useCheckInteractions,
 } from "@/hooks/use-pharmacy";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +34,7 @@ export function PharmacyPage() {
       </header>
       <DispensationSection />
       <ControlledSubstancesSection />
+      <InteractionsSection />
     </div>
   );
 }
@@ -267,6 +271,128 @@ function ControlledSubstancesSection() {
           {(log ?? []).length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">Sin movimientos registrados.</p>}
         </div>
       )}
+    </section>
+  );
+}
+
+function InteractionsSection() {
+  const { data: products } = useProducts();
+  const { data: ingredients } = useProductActiveIngredients();
+  const setIngredient = useSetProductActiveIngredient();
+  const checkInteractions = useCheckInteractions();
+
+  const [mapProductId, setMapProductId] = useState("");
+  const [ingredientText, setIngredientText] = useState("");
+  const [checkProductIds, setCheckProductIds] = useState<string[]>(["", ""]);
+  const [error, setError] = useState<string | null>(null);
+
+  const productName = (id: number) => products?.find((p) => p.id === id)?.name ?? `#${id}`;
+  const ingredientFor = (id: number) => ingredients?.find((i) => i.product_id === id)?.active_ingredient;
+
+  const saveIngredient = async () => {
+    if (!mapProductId || !ingredientText) return;
+    try {
+      await setIngredient.mutateAsync({ product_id: Number(mapProductId), active_ingredient: ingredientText });
+      setMapProductId("");
+      setIngredientText("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo guardar el principio activo");
+    }
+  };
+
+  const updateCheckProduct = (index: number, value: string) => {
+    setCheckProductIds((prev) => prev.map((v, i) => (i === index ? value : v)));
+  };
+
+  const runCheck = async () => {
+    setError(null);
+    checkInteractions.reset();
+    const ids = checkProductIds.filter(Boolean).map(Number);
+    if (ids.length < 2) return;
+    try {
+      await checkInteractions.mutateAsync({ product_ids: ids });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo chequear interacciones");
+    }
+  };
+
+  const result = checkInteractions.data;
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-lg font-medium text-foreground">Interacciones</h2>
+      <p className="text-sm text-muted-foreground">
+        Chequeo de interacciones medicamento-medicamento contra un catálogo de referencia
+        (ambiente de desarrollo — ver nota en STATE.md sobre integración con API externa real).
+      </p>
+
+      <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+        <p className="text-xs font-medium text-muted-foreground">Mapear principio activo de un producto</p>
+        <div className="flex gap-2">
+          <Select value={mapProductId} onValueChange={setMapProductId}>
+            <SelectTrigger aria-label="Producto a mapear" className="max-w-xs"><SelectValue placeholder="Producto" /></SelectTrigger>
+            <SelectContent>
+              {products?.map((p) => (
+                <SelectItem key={p.id} value={String(p.id)}>
+                  {p.name}{ingredientFor(p.id) ? ` (${ingredientFor(p.id)})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input placeholder="Principio activo" value={ingredientText} onChange={(e) => setIngredientText(e.target.value)} />
+          <Button size="sm" disabled={!mapProductId || !ingredientText} onClick={saveIngredient}>
+            Guardar
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+        <p className="text-xs font-medium text-muted-foreground">Chequear interacciones entre productos</p>
+        <div className="flex flex-wrap gap-2">
+          {checkProductIds.map((value, i) => (
+            <Select key={i} value={value} onValueChange={(v) => updateCheckProduct(i, v)}>
+              <SelectTrigger aria-label={`Producto ${i + 1}`} className="max-w-xs"><SelectValue placeholder="Producto" /></SelectTrigger>
+              <SelectContent>
+                {products?.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          ))}
+          <Button size="sm" variant="ghost" onClick={() => setCheckProductIds((prev) => [...prev, ""])}>
+            + Agregar producto
+          </Button>
+        </div>
+        <Button size="sm" className="w-fit" disabled={checkProductIds.filter(Boolean).length < 2} onClick={runCheck}>
+          Chequear
+        </Button>
+
+        {error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+        {result && (
+          <div className="flex flex-col gap-2">
+            {result.warnings.length === 0 ? (
+              <p className="rounded-md bg-emerald-100 px-3 py-2 text-sm text-emerald-800">Sin interacciones conocidas.</p>
+            ) : (
+              result.warnings.map((w, i) => (
+                <div
+                  key={i}
+                  role="alert"
+                  className={`rounded-md px-3 py-2 text-sm ${w.severity === "major" ? "bg-destructive/10 text-destructive" : "bg-amber-100 text-amber-800"}`}
+                >
+                  <p className="font-medium">
+                    {productName(w.product_id_a)} + {productName(w.product_id_b)} — {w.severity === "major" ? "Severidad alta" : "Severidad moderada"}
+                  </p>
+                  <p>{w.description}</p>
+                </div>
+              ))
+            )}
+            {result.unchecked_product_ids.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Sin principio activo mapeado (no incluidos en el chequeo): {result.unchecked_product_ids.map(productName).join(", ")}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

@@ -287,3 +287,129 @@ class ControlledSubstanceLogService:
             .order_by(models.ControlledSubstanceLogEntry.created_at.desc())
         )
         return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 17 — Interacciones [extendido]. Ver DED-58 a DED-61 en models.py.
+# ---------------------------------------------------------------------------------------------
+import abc
+
+
+def _normalize_ingredient(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
+class ProductActiveIngredientService:
+    @staticmethod
+    async def set(
+        db: AsyncSession, *, company_id: int, payload: schemas.ProductActiveIngredientSet, created_by: int | None,
+    ) -> models.ProductActiveIngredient:
+        normalized = _normalize_ingredient(payload.active_ingredient)
+        stmt = (
+            pg_insert(models.ProductActiveIngredient)
+            .values(company_id=company_id, product_id=payload.product_id, active_ingredient=normalized, created_by=created_by)
+            .on_conflict_do_update(
+                index_elements=["company_id", "product_id"],
+                set_={"active_ingredient": normalized},
+            )
+        )
+        await db.execute(stmt)
+        await db.commit()
+        result = await db.execute(
+            select(models.ProductActiveIngredient).where(
+                models.ProductActiveIngredient.company_id == company_id,
+                models.ProductActiveIngredient.product_id == payload.product_id,
+            )
+        )
+        return result.scalar_one()
+
+    @staticmethod
+    async def list(db: AsyncSession, *, company_id: int) -> list[models.ProductActiveIngredient]:
+        result = await db.execute(
+            select(models.ProductActiveIngredient).where(models.ProductActiveIngredient.company_id == company_id)
+        )
+        return list(result.scalars().all())
+
+
+class DrugInteractionProvider(abc.ABC):
+    @abc.abstractmethod
+    async def check_pairs(self, db: AsyncSession, *, ingredient_pairs: list[tuple[str, str]]) -> list[models.DrugInteractionReferenceEntry]:
+        """Recibe pares ya normalizados y ordenados alfabéticamente
+        (ingredient_a < ingredient_b) y devuelve las entradas del catálogo
+        que matchean."""
+        raise NotImplementedError
+
+
+class DevStubDrugInteractionProvider(DrugInteractionProvider):
+    """Implementación de desarrollo (DED-58) — el sandbox de este proyecto
+    no tiene salida de red hacia RxNorm/DrugBank. Consulta el catálogo de
+    referencia local (`DrugInteractionReferenceEntry`, seed pequeño a
+    mano). Producción inyecta un cliente real de la API externa detrás de
+    la misma interfaz — el resto del servicio no cambia."""
+
+    async def check_pairs(self, db: AsyncSession, *, ingredient_pairs: list[tuple[str, str]]) -> list[models.DrugInteractionReferenceEntry]:
+        if not ingredient_pairs:
+            return []
+        from sqlalchemy import tuple_
+
+        result = await db.execute(
+            select(models.DrugInteractionReferenceEntry).where(
+                tuple_(
+                    models.DrugInteractionReferenceEntry.ingredient_a,
+                    models.DrugInteractionReferenceEntry.ingredient_b,
+                ).in_(ingredient_pairs)
+            )
+        )
+        return list(result.scalars().all())
+
+
+_default_drug_interaction_provider: DrugInteractionProvider = DevStubDrugInteractionProvider()
+
+
+class DrugInteractionService:
+    @staticmethod
+    async def check(
+        db: AsyncSession, *, company_id: int, payload: schemas.InteractionCheckRequest,
+        provider: DrugInteractionProvider | None = None,
+    ) -> schemas.InteractionCheckResult:
+        active_provider = provider or _default_drug_interaction_provider
+
+        result = await db.execute(
+            select(models.ProductActiveIngredient).where(
+                models.ProductActiveIngredient.company_id == company_id,
+                models.ProductActiveIngredient.product_id.in_(payload.product_ids),
+            )
+        )
+        mapped = list(result.scalars().all())
+        ingredient_by_product = {row.product_id: row.active_ingredient for row in mapped}
+        unchecked = [pid for pid in payload.product_ids if pid not in ingredient_by_product]
+
+        # Todas las combinaciones únicas de productos con ingrediente
+        # mapeado — DED-59: un producto sin mapeo simplemente no genera
+        # pares, no rompe el chequeo del resto.
+        checked_products = list(ingredient_by_product.items())
+        pair_lookup: dict[tuple[str, str], list[tuple[int, int]]] = {}
+        for i in range(len(checked_products)):
+            for j in range(i + 1, len(checked_products)):
+                product_a, ingredient_a = checked_products[i]
+                product_b, ingredient_b = checked_products[j]
+                if ingredient_a == ingredient_b:
+                    continue
+                key = (ingredient_a, ingredient_b) if ingredient_a < ingredient_b else (ingredient_b, ingredient_a)
+                product_pair = (product_a, product_b) if ingredient_a < ingredient_b else (product_b, product_a)
+                pair_lookup.setdefault(key, []).append(product_pair)
+
+        entries = await active_provider.check_pairs(db, ingredient_pairs=list(pair_lookup.keys()))
+
+        warnings: list[schemas.InteractionWarning] = []
+        for entry in entries:
+            for product_id_a, product_id_b in pair_lookup.get((entry.ingredient_a, entry.ingredient_b), []):
+                warnings.append(
+                    schemas.InteractionWarning(
+                        product_id_a=product_id_a, product_id_b=product_id_b,
+                        ingredient_a=entry.ingredient_a, ingredient_b=entry.ingredient_b,
+                        severity=entry.severity, description=entry.description,
+                    )
+                )
+
+        return schemas.InteractionCheckResult(warnings=warnings, unchecked_product_ids=unchecked)

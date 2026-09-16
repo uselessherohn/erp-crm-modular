@@ -94,3 +94,45 @@ class ControlledSubstanceLogEntryRead(BaseModel):
     dispensed_by: int
     quantity: Decimal
     created_at: datetime
+
+
+class InteractionSeverityEnum(str, Enum):
+    moderate = "moderate"
+    major = "major"
+
+
+class ProductActiveIngredientSet(BaseModel):
+    product_id: int
+    active_ingredient: str = Field(..., min_length=1, max_length=200)
+
+
+class ProductActiveIngredientRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: int
+    active_ingredient: str
+
+
+class InteractionCheckRequest(BaseModel):
+    # Lista de productos que se piensan dispensar juntos (típicamente las
+    # líneas de una DispensationOrder en borrador, pero es independiente
+    # — DED-61: no depende de que la orden ya exista).
+    product_ids: list[int] = Field(..., min_length=2)
+
+
+class InteractionWarning(BaseModel):
+    product_id_a: int
+    product_id_b: int
+    ingredient_a: str
+    ingredient_b: str
+    severity: InteractionSeverityEnum
+    description: str
+
+
+class InteractionCheckResult(BaseModel):
+    warnings: list[InteractionWarning]
+    # Productos del request que no tienen principio activo mapeado
+    # (ProductActiveIngredient) y por lo tanto quedaron fuera del chequeo
+    # — DED-59, expuesto explícitamente para que el frontend lo muestre
+    # en vez de dar una falsa sensación de cobertura completa.
+    unchecked_product_ids: list[int]

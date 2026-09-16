@@ -10,15 +10,15 @@ lo hecho, fase por fase).
 
 ## Estado actual del proyecto
 
-**20 módulos completos de punta a punta** más **1 módulo con backend
-verificado, frontend aún sin construir** (módulo 15, ver nota △ abajo)
-— el paquete Administrativo está completo, Médico tiene sus 6 módulos
-construibles hoy completos salvo el frontend del widget de reserva
-pública, el paquete Web (website/ecommerce) está completo, notifications,
-reports y ahora también audit completo (módulo 25) en Transversal, y el
-paquete Farmacéutico tiene su primer módulo (que además cubre, dentro
-del mismo cierre, la parte core de sustancias controladas y el flujo de
-POS farmacia — ver DED-49 en `STATE.md`):
+**22 módulos completos de punta a punta** — el paquete Administrativo
+está completo, Médico tiene sus 6 módulos construibles hoy completos
+(incluido el 15, con su widget embebible verificado end-to-end contra
+Postgres real), el paquete Web (website/ecommerce) está completo,
+notifications, reports y audit completo (módulo 25) en Transversal, y el
+paquete Farmacéutico tiene dos módulos: dispensación (que además cubre,
+dentro del mismo cierre, la parte core de sustancias controladas y el
+flujo de POS farmacia — ver DED-49 en `STATE.md`) e interacciones
+medicamentosas (módulo 17):
 
 | # | Módulo | Paquete | Estado |
 |---|--------|---------|--------|
@@ -36,18 +36,20 @@ POS farmacia — ver DED-49 en `STATE.md`):
 | 12 | medical — teleconsulta | Médico | ✓ Completo |
 | 13 | medical — facturación médica básica | Médico | ✓ Completo |
 | 14 | medical — portal/mensajería paciente-médico | Médico | ✓ Completo |
-| 15 | medical — reserva pública de citas (widget) | Médico | △ Backend verificado (Postgres real), falta frontend del widget |
+| 15 | medical — reserva pública de citas (widget) | Médico | ✓ Completo — backend + widget embebible, verificado contra Postgres real |
 | 16 | pharmacy — dispensación + verificación clínica (incluye sustancias controladas y POS farmacia) | Farmacéutico | ✓ Completo |
+| 17 | pharmacy — interacciones medicamentosas (sustancias controladas ya cubierta en el módulo 16, DED-49) | Farmacéutico | ✓ Completo — verificado contra Postgres real |
 | 22 | website (CMS, formularios) | Web | ✓ Completo |
 | 23 | ecommerce (carrito, checkout, pagos) | Web | ✓ Completo |
 | 24 | reports | Transversal | ✓ Completo |
 | 25 | audit completo (UI, retención configurable, reportería) | Transversal | ✓ Completo — verificado contra Postgres real |
 | 26 | notifications | Transversal | ✓ Completo |
 
-De Farmacéutico faltan Interacciones, Aseguradoras/Copagos, Reposición a
-Droguerías y MTM (módulos 17-21, todos `[extendido]`). De Transversal ya
-no falta nada construible hoy (audit completo, módulo 25, se cerró y
-verificó en esta sesión — el audit mínimo ya vivía en el módulo 1).
+De Farmacéutico faltan Aseguradoras/Copagos, Reposición a Droguerías y
+MTM (módulos 18, 20, 21, todos `[extendido]`) — Interacciones (módulo
+17) ya se cerró y verificó en esta sesión. De Transversal ya no falta
+nada construible hoy (audit completo, módulo 25, se cerró y verificó en
+esta sesión — el audit mínimo ya vivía en el módulo 1).
 
 **Nota de verificación**: 22/23/24 se escribieron en un entorno sin
 Postgres/red/Node y se verificaron después vía CI (GitHub Actions,
@@ -66,10 +68,15 @@ consecutivas de la misma sesión:
   fixture `store` de `test_ecommerce_module.py` nunca le daba stock
   físico al producto de prueba, por lo que
   `test_webhook_confirms_order_and_posts_invoice` fallaba con
-  `ConflictError` al reservar stock. Lo que **sigue sin construir** del
-  módulo 15 es el frontend del widget (es para el sitio público, no una
-  pantalla del panel — ver TODO-45 en `STATE.md`); por eso sigue marcado
-  `△` y no `✓`.
+  `ConflictError` al reservar stock. El frontend del widget
+  (`public-widgets/medical-booking/`, fuera de `frontend/` a propósito —
+  ver su README) se construyó en una sesión posterior y se verificó
+  end-to-end contra Postgres real con un arnés en `jsdom` + `fetch`
+  nativo (sin mocks): carga de disponibilidad, selección de
+  día/horario, envío del formulario, y dos casos límite reales
+  (condición de carrera al confirmar un cupo que alguien más tomó
+  primero, y compañía sin `medical`/`web` licenciado). Con esto, el
+  módulo 15 pasa a `✓ Completo`.
 - **Módulo 25** (audit completo): backend (columna `audit.changes`,
   tabla `audit_retention_policies`, 3 rutas nuevas, 5 tests) pasa 5/5
   tras corregir **dos bugs reales**, ninguno relacionado con el 15:
@@ -92,19 +99,44 @@ consecutivas de la misma sesión:
      `InsufficientPrivilegeError: permission denied for table
      audit_retention_policies`. Corregido agregando el `GRANT` explícito
      a la migración.
+- **Módulo 17** (pharmacy — interacciones medicamentosas; sustancias
+  controladas ya cubierta en el módulo 16, DED-49): backend (2 tablas
+  nuevas — `product_active_ingredients` multi-tenant con RLS,
+  `drug_interaction_reference_entries` catálogo global sin RLS, seed
+  fijo de 15 pares conocidos —, 3 rutas nuevas, 5 tests) pasa 5/5 desde
+  el primer intento, sin bugs propios que corregir — a diferencia de los
+  dos anteriores, su migración ya incluía los `GRANT` de tabla y
+  secuencia correctos desde el principio.
 
-Con ambos módulos corregidos, `pytest tests/` queda en **153/153** contra
-Postgres real (base recreada de cero), `alembic upgrade head` corre
-limpio de punta a punta (27 migraciones), `contracts/openapi.json` quedó
-recongelado contra el servidor real (139 rutas / 174 operaciones), y
-`npx vitest run` (frontend, contra el backend y la base reales, sin
-mocks) queda en **19/19 archivos, 28/28 tests** — incluido
-`AccountsPage.integration.test.tsx`, que había fallado en una corrida
-anterior de esta misma sesión no por un bug de la app sino por correr la
-suite varias veces seguidas contra la misma compañía sembrada sin
-recrear la base entre corridas (ambigüedad de texto acumulada en la
-tabla de mapeos contables — se resolvió sola al correr una vez limpia,
-no requirió cambio de código).
+Con los tres módulos verificados, `pytest tests/` queda en **158/158**
+contra Postgres real (base recreada de cero), `alembic upgrade head`
+corre limpio de punta a punta (28 migraciones), `contracts/openapi.json`
+quedó recongelado contra el servidor real (142 rutas / 177 operaciones),
+y `npx vitest run` (frontend, contra el backend y la base reales, sin
+mocks) queda en **19/19 archivos, 29/29 tests**.
+
+**Corrección (sesión posterior, cierre del widget del módulo 15 y del
+módulo de Interacciones — ver más abajo)**: en esta misma sesión se
+había reportado que `AccountsPage.integration.test.tsx` fallaba por
+"ambigüedad de texto acumulada" al correr la suite varias veces sin
+recrear la base, y que se resolvía solo al correr una vez limpia sin
+cambio de código. **Eso resultó ser una lectura incompleta.** En una
+corrida posterior, limpia, de un solo intento, el mismo test volvió a
+fallar — la causa real es que el orden real en que Vitest ejecuta los
+archivos no es necesariamente el alfabético, así que cualquier otro
+archivo que cree un mapeo `document_type=sales_invoice` (con otro rol)
+antes de que corra `AccountsPage`, en la misma corrida, ya vuelve
+ambiguo su `getByText("Factura de venta")` — no hacía falta repetir la
+suite completa. Corregido esperando por el código de cuenta (único por
+corrida) en vez de por la etiqueta genérica del documento. De paso
+apareció un segundo bug real, en `StockPage.integration.test.tsx`: dos
+de las tres aserciones del test corrían de forma síncrona justo después
+de la primera (que sí esperaba de forma async), sin esperar a que
+terminara de pintar el resto de la fila — una carrera real contra el
+propio render, no contra el backend. Corregido envolviendo las tres en
+el mismo `waitFor`. Con ambos fixes, `npx vitest run` vuelve a quedar en
+verde de forma estable (confirmado con más de una corrida limpia
+consecutiva).
 
 ## Marca e instalación como PWA
 
@@ -135,7 +167,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 153 tests; ver nota abajo sobre el estado real de la corrida
+pytest tests/ -q   # 158 tests; ver nota abajo sobre el estado real de la corrida
 
 # Frontend
 cd frontend

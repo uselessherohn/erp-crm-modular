@@ -3,13 +3,14 @@
  * a partir de contracts/openapi.json (Fase 2.5), recortado programáticamente:
  * se descarta el cliente Zodios (`makeApi`/`Zodios`/`createApiClient`) —
  * incompatible con Zod v4 instalado en este proyecto, y de bajo
- * mantenimiento. El propio `--export-schemas` ya expone cada schema
- * individual y un objeto agregado `export const schemas = {...}` —
- * solo se recorta lo que viene DESPUÉS de eso (el array `endpoints` y
- * el cliente Zodios). api-client.ts hace `schemas.EmployeeRead.parse(...)`.
- * NO editar a mano — re-generar desde el openapi.json congelado.
+ * mantenimiento/sin uso real en este proyecto (se usa fetch nativo vía
+ * src/lib/api-client.ts, no un cliente Zodios). Solo se conserva
+ * `export const schemas = { ... }` con los objetos Zod.
+ * Do not make direct changes to the file — volver a correr el recorte
+ * documentado en LOG_EJECUCION.md tras cualquier regeneración real.
  */
 import { z } from "zod";
+
 
 const CompanyCreate = z
   .object({
@@ -1184,6 +1185,190 @@ const NotificationRead = z
     created_at: z.string().datetime({ offset: true }),
   })
   .passthrough();
+const PageCreate = z
+  .object({
+    slug: z
+      .string()
+      .max(150)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    title: z.string().max(300),
+    content: z.string().optional().default(""),
+  })
+  .passthrough();
+const PageRead = z
+  .object({
+    slug: z
+      .string()
+      .max(150)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    title: z.string().max(300),
+    content: z.string().optional().default(""),
+    id: z.number().int(),
+    company_id: z.number().int(),
+    status: z.string(),
+    published_at: z.union([z.string(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const PageUpdate = z
+  .object({
+    title: z.union([z.string(), z.null()]),
+    content: z.union([z.string(), z.null()]),
+  })
+  .partial()
+  .passthrough();
+const FormSubmissionRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    page_id: z.union([z.number(), z.null()]),
+    form_name: z.string(),
+    payload: z.object({}).partial().passthrough(),
+    contact_id: z.number().int(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const FormSubmissionCreate = z
+  .object({
+    form_name: z.string().max(100),
+    page_id: z.union([z.number(), z.null()]).optional(),
+    name: z.string().max(300),
+    email: z.union([z.string(), z.null()]).optional(),
+    phone: z.union([z.string(), z.null()]).optional(),
+    message: z.union([z.string(), z.null()]).optional(),
+    extra: z.object({}).partial().passthrough().optional(),
+  })
+  .passthrough();
+const EcommerceSettingsCreated = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    default_warehouse_id: z.union([z.number(), z.null()]),
+    default_price_list_id: z.union([z.number(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+    webhook_secret: z.string(),
+  })
+  .passthrough();
+const EcommerceSettingsRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    default_warehouse_id: z.union([z.number(), z.null()]),
+    default_price_list_id: z.union([z.number(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const EcommerceSettingsUpdate = z
+  .object({
+    default_warehouse_id: z.union([z.number(), z.null()]),
+    default_price_list_id: z.union([z.number(), z.null()]),
+  })
+  .partial()
+  .passthrough();
+const CatalogItem = z
+  .object({
+    product_id: z.number().int(),
+    sku: z.string(),
+    name: z.string(),
+    unit_price: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+  })
+  .passthrough();
+const CartItemRead = z
+  .object({
+    id: z.number().int(),
+    product_id: z.number().int(),
+    quantity: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+    unit_price_snapshot: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+  })
+  .passthrough();
+const CartCreated = z
+  .object({
+    id: z.number().int(),
+    status: z.string(),
+    currency_code: z.string(),
+    sales_order_id: z.union([z.number(), z.null()]),
+    items: z.array(CartItemRead),
+    session_token: z.string(),
+  })
+  .passthrough();
+const CartRead = z
+  .object({
+    id: z.number().int(),
+    status: z.string(),
+    currency_code: z.string(),
+    sales_order_id: z.union([z.number(), z.null()]),
+    items: z.array(CartItemRead),
+  })
+  .passthrough();
+const AddCartItem = z
+  .object({
+    product_id: z.number().int(),
+    quantity: z.union([z.number(), z.string()]),
+  })
+  .passthrough();
+const CheckoutRequest = z
+  .object({
+    name: z.string().max(300),
+    email: z.string().max(255),
+    phone: z.union([z.string(), z.null()]).optional(),
+  })
+  .passthrough();
+const CheckoutResult = z
+  .object({
+    sales_order_id: z.number().int(),
+    sales_order_number: z.string(),
+    status: z.string(),
+    total_lines: z.number().int(),
+  })
+  .passthrough();
+const MetricInfo = z
+  .object({ key: z.string(), label: z.string(), columns: z.array(z.string()) })
+  .passthrough();
+const MetricDataResult = z
+  .object({
+    key: z.string(),
+    columns: z.array(z.string()),
+    rows: z.array(z.object({}).partial().passthrough()),
+  })
+  .passthrough();
+const DashboardWidget = z
+  .object({
+    widget_type: z
+      .string()
+      .regex(/^(table|metric)$/)
+      .optional()
+      .default("table"),
+    metric_key: z.string(),
+    title: z.string().max(200),
+  })
+  .passthrough();
+const DashboardCreate = z
+  .object({
+    name: z.string().max(200),
+    widgets: z.array(DashboardWidget).optional(),
+  })
+  .passthrough();
+const DashboardRead = z
+  .object({
+    id: z.number().int(),
+    company_id: z.number().int(),
+    name: z.string(),
+    owner_user_id: z.union([z.number(), z.null()]),
+    widgets: z.array(DashboardWidget),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const DashboardUpdate = z
+  .object({
+    name: z.union([z.string(), z.null()]),
+    widgets: z.union([z.array(DashboardWidget), z.null()]),
+  })
+  .partial()
+  .passthrough();
 const DispensationLineRequest = z
   .object({
     product_id: z.number().int(),
@@ -1255,6 +1440,39 @@ const ControlledSubstanceLogEntryRead = z
     dispensed_by: z.number().int(),
     quantity: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
     created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const ProductActiveIngredientSet = z
+  .object({
+    product_id: z.number().int(),
+    active_ingredient: z.string().min(1).max(200),
+  })
+  .passthrough();
+const ProductActiveIngredientRead = z
+  .object({
+    id: z.number().int(),
+    product_id: z.number().int(),
+    active_ingredient: z.string(),
+  })
+  .passthrough();
+const InteractionCheckRequest = z
+  .object({ product_ids: z.array(z.number().int()).min(2) })
+  .passthrough();
+const InteractionSeverityEnum = z.enum(["moderate", "major"]);
+const InteractionWarning = z
+  .object({
+    product_id_a: z.number().int(),
+    product_id_b: z.number().int(),
+    ingredient_a: z.string(),
+    ingredient_b: z.string(),
+    severity: InteractionSeverityEnum,
+    description: z.string(),
+  })
+  .passthrough();
+const InteractionCheckResult = z
+  .object({
+    warnings: z.array(InteractionWarning),
+    unchecked_product_ids: z.array(z.number().int()),
   })
   .passthrough();
 
@@ -1398,6 +1616,27 @@ export const schemas = {
   NotificationChannelEnum,
   NotificationSend,
   NotificationRead,
+  PageCreate,
+  PageRead,
+  PageUpdate,
+  FormSubmissionRead,
+  FormSubmissionCreate,
+  EcommerceSettingsCreated,
+  EcommerceSettingsRead,
+  EcommerceSettingsUpdate,
+  CatalogItem,
+  CartItemRead,
+  CartCreated,
+  CartRead,
+  AddCartItem,
+  CheckoutRequest,
+  CheckoutResult,
+  MetricInfo,
+  MetricDataResult,
+  DashboardWidget,
+  DashboardCreate,
+  DashboardRead,
+  DashboardUpdate,
   DispensationLineRequest,
   DispensationOrderCreate,
   AllergyCheckSourceEnum,
@@ -1408,4 +1647,11 @@ export const schemas = {
   ControlledSubstanceMark,
   ControlledSubstanceProductRead,
   ControlledSubstanceLogEntryRead,
+  ProductActiveIngredientSet,
+  ProductActiveIngredientRead,
+  InteractionCheckRequest,
+  InteractionSeverityEnum,
+  InteractionWarning,
+  InteractionCheckResult,
 };
+

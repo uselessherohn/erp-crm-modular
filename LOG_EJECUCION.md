@@ -1482,8 +1482,9 @@ anterior):
   corriendo `vitest` dos veces seguidas contra la misma base sin recrearla: `CreditDebitNotesPage`,
   `InvoicesPage`, `MedicalPage` y `PaymentsPage` también crean mapeos `document_type=sales_invoice`
   (con roles distintos) contra la misma compañía compartida "El Roble" — cada corrida adicional deja
-  más filas con esa misma etiqueta visible. No es un bug de la app ni del test: al recrear la base
-  de cero y correr una sola vez, `AccountsPage` pasó sin ningún cambio de código.
+  más filas con esa misma etiqueta visible. Al recrear la base de cero y correr una sola vez,
+  `AccountsPage` pasó sin ningún cambio de código, así que en ese momento se concluyó (**de forma
+  incompleta, ver corrección más abajo, sesión del cierre del módulo 15/17**) que no había bug real.
 
 Con la base recreada de cero (`DROP DATABASE`→`CREATE DATABASE`→`alembic upgrade head`→
 `POST /internal/companies`→`bootstrap_admin.py`→`vitest run`, una sola vez): **19/19 archivos,
@@ -1544,3 +1545,118 @@ Verificación real contra Postgres, primera corrida:
   construido en README/STATE.md" a "✓ Completo, verificado contra Postgres real". `README.md` y
   `STATE.md` actualizados: 20 módulos completos de punta a punta (antes 19) más el módulo 15 en
   `△` (backend verificado, falta frontend del widget).
+
+---
+
+## Cierre del módulo 15: widget de reserva pública de citas (sep-2026)
+
+Última pieza pendiente del módulo 15 (TODO-45): el frontend público. Se descartó construirlo dentro
+de `frontend/` (la SPA React del panel administrativo) porque es, por definición, para pacientes
+anónimos en el sitio público de la clínica — mismo argumento ya usado para no construir el
+storefront de `ecommerce` dentro del panel.
+
+**Decisión de diseño**: `public-widgets/medical-booking/widget.js` — vanilla JS sin dependencias ni
+build step (para poder pegarse en cualquier HTML, incluido el `content` de una `Page` de `website`,
+spec 8.4: "el mismo motor de páginas/formularios aloja el widget", o un sitio externo por completo).
+Consume únicamente las 2 rutas públicas ya existentes del módulo 15. Config vía atributos `data-*`
+en el contenedor (`data-api-base`, `data-company-id`, `data-professional-id`, y defaults razonables
+para duración de cupo/horario laboral/días hacia adelante — la API pública nunca expone esa
+configuración interna, solo ocupación real). Fechas en hora local del navegador con ISO 8601 +
+offset al backend (la ruta pública no expone `Company.timezone`). Flujo: día → horario → datos de
+contacto (nombre + email o teléfono, mismo criterio de "al menos uno" que el backend) → confirmación.
+
+**Verificación real, no solo revisión de código.** Sin runner de tests de frontend fuera de
+`vitest` (que vive dentro de `frontend/`, con su propio `tsconfig`/`vite.config`, y este widget vive
+deliberadamente fuera de ese árbol), se armó un arnés ad-hoc con `jsdom` + `fetch` nativo de Node 22
+para simular un navegador real cargando el widget y interactuando con él, contra el backend real
+(Postgres real, sin mocks, mismo patrón que el resto de esta sesión):
+
+1. **Flujo feliz completo**: se levantó Postgres limpio, se migró, se creó la compañía "El Roble" vía
+   `/internal/companies`, se corrió `bootstrap_admin.py` (activa `medical`+`web`, entre otros) y se
+   usó el usuario admin resultante como `professional_user_id` de prueba (cualquier `User` sirve —
+   confirmado leyendo el fixture `professional` de `test_medical_module.py`, no hay chequeo de rol).
+   El widget cargado en `jsdom`: detectó 13 días con cupos disponibles, mostró 20 horarios para el
+   primer día, renderizó el formulario al elegir uno, y al enviarlo con datos de un paciente de
+   prueba recibió `201` real del backend y mostró la pantalla de confirmación con fecha/hora
+   correctas en español ("Miércoles, 16 de septiembre a las 8:00 a. m.").
+2. **Slots ya ocupados correctamente excluidos**: se reservó un horario directo por API (simulando
+   "otra persona ya lo tomó") y se confirmó que el widget, al recalcular disponibilidad, no lo ofrece
+   como opción.
+3. **Condición de carrera real** (el caso más importante de verificar, no un test trivial): se
+   interceptó la petición `fetch` que el widget iba a enviar para confirmar una cita, se leyó el
+   `scheduled_start`/`scheduled_end` exacto que había calculado, se reservó ESE mismo horario por
+   otra vía justo antes de dejar pasar la petición del widget, y se confirmó que el widget recibe el
+   `409 CONFLICT` real del backend, muestra el mensaje "Ese horario ya no está disponible — alguien
+   más lo tomó. Elegí otro, por favor." (mapeado desde el código de error `CONFLICT` del envelope
+   uniforme, no un mensaje técnico), y queda en un estado usable (el formulario sigue visible, no se
+   cuelga en "Confirmando tu cita…").
+4. **Compañía sin `medical`/`web` licenciado**: contra una compañía real sin `bootstrap_admin.py`
+   corrido (por lo tanto sin esos paquetes activos), el widget recibe `PACKAGE_NOT_LICENSED` y
+   muestra "La reserva en línea no está disponible en este momento..." en vez de un error técnico o
+   quedarse cargando indefinidamente.
+
+Los 4 escenarios, reales contra Postgres, sin ningún mock — no se dejaron como test automatizado en
+el repositorio (documentado como TODO explícito en el README del widget, no como omisión silenciosa).
+
+**Resultado**: módulo 15 pasa de `△` a `✓ COMPLETO`. `README.md`/`STATE.md` actualizados — 21
+módulos completos de punta a punta (antes 20), ninguno restante en estado `△`. TODO-44 y TODO-45
+cerrados; TODO-46 (directorio público de profesionales) sigue abierto por diseño, sin cambios.
+
+---
+
+## Corrección real de AccountsPage/StockPage + módulo 17 (Interacciones Medicamentosas) (sep-2026)
+
+**Corrección sobre el diagnóstico anterior de `AccountsPage`.** Al correr `npx vitest run` una vez
+más, limpio, un solo intento, contra una base recién sembrada — sin repetir la suite completa —
+`AccountsPage.integration.test.tsx` volvió a fallar con el mismo síntoma
+(`getByText("Factura de venta")` ambiguo). Eso descarta la conclusión anterior ("no es un bug real,
+se resuelve solo al no repetir la suite"): el orden real en que Vitest ejecuta los archivos de test
+no es necesariamente el alfabético, así que basta con que CUALQUIER otro archivo que cree un mapeo
+`document_type=sales_invoice` (con otro rol) corra antes que `AccountsPage` en esa ejecución
+particular — sin que haga falta repetir nada. Es la misma flakiness que aparece documentada, sin
+diagnóstico real, en al menos 6 sesiones históricas distintas de este proyecto (buscar
+"AccountsPage" más arriba en este archivo) — siempre atribuida genéricamente a "carga del sandbox".
+Corregido de verdad: el test ahora espera por el código de cuenta (único por corrida, con sufijo de
+timestamp) en vez de por la etiqueta genérica del documento, que dejó de ser ambigua para esta
+aserción sin importar cuántas otras filas de `sales_invoice` existan.
+
+De paso, la misma corrida destapó un segundo bug real en `StockPage.integration.test.tsx`: de las 3
+aserciones del test, solo la primera (`getByText(productName)`) estaba envuelta en `waitFor`; las
+otras dos (`warehouseName`, `"75.0000"`) corrían de forma síncrona inmediatamente después, sin
+esperar a que React terminara de pintar el resto de la fila de la tabla — una carrera real contra el
+propio render del componente, no una flakiness de infraestructura. Corregido envolviendo las 3
+aserciones en el mismo `waitFor`.
+
+Con ambos fixes, tres corridas limpias consecutivas de `npx vitest run` quedaron en verde de forma
+estable (19/19 archivos, 29/29 tests) — el `README.md` recoge la corrección del diagnóstico anterior
+explícitamente, en vez de dejar la afirmación incompleta.
+
+**Módulo 17 — Interacciones Medicamentosas (pharmacy), recibido como ZIP nuevo
+(`erp-crm-modular-main__1_.zip`).** Cubre la parte "Interacciones [extendido]" del módulo 17 (la
+parte "Sustancias Controladas [core]" ya había quedado cubierta dentro del cierre del módulo 16,
+DED-49). El ZIP se había ramificado de un estado del repo previo a los módulos 15 y 25 (mismo patrón
+de merge que el módulo 25) — se hizo el mismo merge quirúrgico: se copiaron sin conflicto los
+archivos exclusivos de este módulo (`app/pharmacy/{models,routers,schemas,services}.py`,
+`test_pharmacy_module.py`, `PharmacyPage.tsx` + su test, `use-pharmacy.ts`,
+`frontend/src/lib/generated/{api-types,schemas}.ts` — este módulo sí actualizó el cliente tipado
+"real" en vez de dejar un shim temporal, a diferencia de `website`/`ecommerce`/`reports`/`audit`), se
+aplicó a mano el único cambio real sobre un archivo que yo ya había tocado (`bootstrap_admin.py`, 2
+permisos nuevos), y se reencadenó la migración nueva (`67040fb9b867`, `product_active_ingredients` +
+`drug_interaction_reference_entries`) de `down_revision=1d9a25acd918` a `f3b6a1d9c204` (el head real
+en `main` a esa altura), documentando el porqué en la propia migración en vez de dejarlo implícito.
+
+Esta migración ya venía con los `GRANT` de tabla y secuencia correctos desde el primer intento —
+su propio autor claramente ya conocía el bug sistémico de `1d9a25acd918` y lo evitó proactivamente.
+Diseño limpio: `drug_interaction_reference_entries` es un catálogo GLOBAL sin RLS (mismo criterio
+que `permissions`, seed fijo de 15 pares conocidos vía migración, sin endpoint de escritura pública)
+mientras que `product_active_ingredients` sí es multi-tenant con RLS — separación correcta entre
+"catálogo de referencia clínica" y "qué principio activo tiene cada producto de esta compañía".
+
+Verificación real contra Postgres, primer intento: **158/158 tests en verde** (153 previos + 5
+nuevos), sin ningún bug que corregir en el propio módulo — vino bien construido. 28 migraciones
+limpias de punta a punta. `contracts/openapi.json` recongelado (142 rutas / 3 nuevas:
+`GET/POST /pharmacy/products/active-ingredients` y afines, `POST /pharmacy/interactions/check`).
+`verify_state.py`/`validate_modules.py` sin errores. `tsc -b` y `npm run build` limpios.
+
+**Resultado**: módulo 17 (parte "Interacciones") pasa a `✓ Completo`, verificado contra Postgres
+real desde el primer cierre real de este módulo. `README.md`/`STATE.md` actualizados.

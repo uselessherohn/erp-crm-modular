@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_company_id, get_db_with_tenant_context, require_package, require_permission
 from app.core.models import User
 from app.pharmacy import schemas
-from app.pharmacy.services import ControlledSubstanceLogService, ControlledSubstanceService, DispensationService
+from app.pharmacy.services import (
+    ControlledSubstanceLogService,
+    ControlledSubstanceService,
+    DispensationService,
+    DrugInteractionService,
+    ProductActiveIngredientService,
+)
 
 router = APIRouter(prefix="/pharmacy", tags=["pharmacy"], dependencies=[Depends(require_package("pharmacy"))])
 
@@ -103,3 +109,40 @@ async def list_controlled_substance_log(
 ) -> list[schemas.ControlledSubstanceLogEntryRead]:
     rows = await ControlledSubstanceLogService.list(db, company_id=company_id)
     return [schemas.ControlledSubstanceLogEntryRead.model_validate(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------------
+# Interacciones [extendido] — módulo 17. Ver DED-58 a DED-61 en models.py.
+# ---------------------------------------------------------------------------
+@router.put("/products/{product_id}/active-ingredient", response_model=schemas.ProductActiveIngredientRead)
+async def set_product_active_ingredient(
+    product_id: int,
+    payload: schemas.ProductActiveIngredientSet,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("pharmacy:interaction:manage")),
+) -> schemas.ProductActiveIngredientRead:
+    if payload.product_id != product_id:
+        payload = schemas.ProductActiveIngredientSet(product_id=product_id, active_ingredient=payload.active_ingredient)
+    row = await ProductActiveIngredientService.set(db, company_id=company_id, payload=payload, created_by=actor.id)
+    return schemas.ProductActiveIngredientRead.model_validate(row)
+
+
+@router.get("/products/active-ingredients", response_model=list[schemas.ProductActiveIngredientRead])
+async def list_product_active_ingredients(
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    _actor: User = Depends(require_permission("pharmacy:interaction:manage")),
+) -> list[schemas.ProductActiveIngredientRead]:
+    rows = await ProductActiveIngredientService.list(db, company_id=company_id)
+    return [schemas.ProductActiveIngredientRead.model_validate(r) for r in rows]
+
+
+@router.post("/interactions/check", response_model=schemas.InteractionCheckResult)
+async def check_interactions(
+    payload: schemas.InteractionCheckRequest,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    _actor: User = Depends(require_permission("pharmacy:interaction:check")),
+) -> schemas.InteractionCheckResult:
+    return await DrugInteractionService.check(db, company_id=company_id, payload=payload)

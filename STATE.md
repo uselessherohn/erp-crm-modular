@@ -47,8 +47,8 @@ es transparente a nivel de API).
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
-- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (△ backend VERIFICADO contra Postgres real — 7/7 tests, migración, contrato recongelado —, falta solo el frontend del widget, ver su sección)
-- Farmacéutico: dispensación + verificación clínica (✓ Completo — módulo 16), sustancias controladas (✓ Completo — módulo 16), reposición a droguerías (—), aseguradoras/copagos (—), POS farmacia (✓ Completo — módulo 16), MTM (—)
+- Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (✓ Completo — backend + widget embebible, verificado contra Postgres real, ver su sección)
+- Farmacéutico: dispensación + verificación clínica (✓ Completo — módulo 16), sustancias controladas (✓ Completo — módulo 16), interacciones medicamentosas (✓ Completo — módulo 17, verificado contra Postgres real, sesión sep-2026), reposición a droguerías (—), aseguradoras/copagos (—), POS farmacia (✓ Completo — módulo 16), MTM (—)
 - Web: website (✓ Completo — verificado vía CI), ecommerce (✓ Completo — backend + configuración de panel interno verificados vía CI; storefront público es un frontend separado fuera de alcance de este panel)
 - Transversal: reports (✓ Completo — verificado vía CI), audit completo (✓ Completo — módulo 25, verificado contra Postgres real, sesión sep-2026), notifications (✓ Completo — Fases 1-4 completas)
 
@@ -769,31 +769,44 @@ spec 7.1) — **Fases 1-4 completas**
   real se generó para el profesional correcto, y marca el mensaje como
   leído verificando que persiste.
 
-### `medical` — reserva pública de citas (módulo 15) — △ backend VERIFICADO, falta frontend
+### `medical` — reserva pública de citas (módulo 15) — ✓ COMPLETO, backend + widget verificados contra Postgres real
 
 > **Nota de verificación externa (sep-2026, sesión posterior a la
 > escritura del módulo — Postgres real, base recreada de cero, no
-> simulado)**: los 3 primeros puntos del checklist original ya se
-> corrieron y están en verde. `alembic upgrade head` corre limpio con
-> `a1c4f0e2b9d7` sobre las 25 migraciones previas; `pytest
-> tests/test_medical_module.py` pasa completo, **7 tests reales de este
-> módulo, no 9** (el número original era incorrecto — corregido acá y en
-> el punto 5 de esta sección); `contracts/openapi.json` quedó
-> recongelado contra el servidor real (136 rutas / 170 operaciones,
-> incluidas las 2 públicas de este módulo). Esa misma corrida encontró y
-> corrigió, de paso, un bug real preexistente en `test_ecommerce_module.py`
-> sin relación con este módulo — ver la sección `website`/`ecommerce`/
-> `reports` más abajo y el README. **Sigue pendiente únicamente el punto
-> 4**: no tiene frontend construido (es un widget para el sitio público,
-> no una pantalla del panel — ver TODO-45 más abajo). Por eso el estado
-> sigue siendo `△`, no `✓`.
+> simulado)**: los 4 puntos del checklist original ya se corrieron y
+> están en verde. `alembic upgrade head` corre limpio con `a1c4f0e2b9d7`
+> sobre las 25 migraciones previas; `pytest tests/test_medical_module.py`
+> pasa completo, **7 tests reales de este módulo, no 9** (el número
+> original era incorrecto — corregido acá y en el punto 5 de esta
+> sección); `contracts/openapi.json` quedó recongelado contra el
+> servidor real (136 rutas / 170 operaciones en esa pasada, luego 139/174
+> tras el módulo 25). Esa misma corrida encontró y corrigió, de paso, un
+> bug real preexistente en `test_ecommerce_module.py` sin relación con
+> este módulo — ver la sección `website`/`ecommerce`/`reports` más abajo
+> y el README.
+>
+> **Punto 4 (frontend), cerrado en una sesión posterior**: se construyó
+> `public-widgets/medical-booking/widget.js` — vanilla JS sin
+> dependencias, deliberadamente fuera de `frontend/` (ver su propio
+> `README.md` para el razonamiento completo: es para el sitio público,
+> no el panel administrativo, mismo argumento que ya usó `ecommerce` para
+> no construir su storefront). Verificado end-to-end contra Postgres real
+> con un arnés en `jsdom` + `fetch` nativo de Node (sin mocks, simulando
+> un navegador real): carga de disponibilidad, selección de día/horario,
+> envío del formulario y confirmación exitosa; más dos casos límite
+> reales — (a) condición de carrera genuina (se intercepta la petición
+> del widget justo antes de que salga, se reserva el mismo horario por
+> otra vía, y se confirma que el widget muestra un mensaje claro de
+> conflicto y queda en un estado usable, no colgado), y (b) compañía sin
+> `medical`/`web` licenciado (mensaje amigable, no un error técnico). Con
+> esto el módulo pasa a `✓ COMPLETO`.
 >
 > Checklist original de cierre real (histórico, dejado para contexto):
 > 1. ~~Migrar (`a1c4f0e2b9d7`, agrega `appointments.booked_via_public_widget`).~~
 > 2. ~~Correr `pytest tests/test_medical_module.py` (sección módulo 15).~~
 > 3. ~~Congelar `contracts/openapi.json` (2 rutas nuevas).~~
-> 4. Decidir y construir la superficie de frontend real (a diferencia de
->    `medical` 9-14, este módulo no tiene página interna propia).
+> 4. ~~Decidir y construir la superficie de frontend real (a diferencia de
+>    `medical` 9-14, este módulo no tiene página interna propia).~~
 
 - **Última pieza de la tabla de módulos de Médico** — `depende_de: [9,
   22]` (Agenda Médica + `website`). Ya no estaba bloqueado desde que se
@@ -857,21 +870,25 @@ spec 7.1) — **Fases 1-4 completas**
   interno), exige email o teléfono, filtra disponibilidad por
   traslape y excluye citas canceladas, gating requiere ambos paquetes
   (2 tests: bloquea sin ambos activos, bloquea `suspended`).
-- **Frontend: NO construido en este cierre.** A diferencia de los
-  módulos 9-14 (que viven dentro de `MedicalPage`/`AppointmentDetailDialog`
-  del panel interno), este es un widget para el **sitio público**, no
-  para el panel administrativo — mismo argumento que ya usó `ecommerce`
-  (módulo 23) para no construir el storefront ("carrito y checkout...
-  son, por diseño, un frontend separado, no parte de este panel
-  administrativo"). Aplica igual acá: el widget embebible es
-  responsabilidad de un frontend público independiente (o del propio
-  CMS de `website`), no de la SPA administrativa de Axis Suite.
-  **TODO explícito, no una omisión silenciosa**: decidir dónde vive ese
-  frontend público (¿HTML/JS embebible generado por este mismo repo?
-  ¿un proyecto aparte que consume estas 2 rutas?) antes de dar el
-  módulo por cerrado de cara al cliente — la spec pide un "widget
-  embebible en el sitio público", que es un artefacto de producto, no
-  solo un contrato de API.
+- **Frontend: construido en `public-widgets/medical-booking/`**
+  (`widget.js` + `demo.html` + `README.md`), fuera de `frontend/` a
+  propósito. A diferencia de los módulos 9-14 (que viven dentro de
+  `MedicalPage`/`AppointmentDetailDialog` del panel interno), este es un
+  widget para el **sitio público**, no para el panel administrativo —
+  mismo argumento que ya usó `ecommerce` (módulo 23) para no construir
+  el storefront ("carrito y checkout... son, por diseño, un frontend
+  separado, no parte de este panel administrativo"). Vanilla JS sin
+  dependencias ni build step (tiene que poder pegarse en cualquier HTML,
+  incluido el `content` de una `Page` de `website` — spec 8.4: "el mismo
+  motor de páginas/formularios aloja el widget"). Decisiones de diseño
+  documentadas en su propio `README.md`: sin directorio público de
+  profesionales (TODO-46, sigue abierto — un `<div>` por profesional),
+  horario laboral resuelto en el widget vía `data-*` (la API pública
+  nunca expone configuración de agenda, solo ocupación real), fechas en
+  hora local del navegador con ISO 8601 + offset al backend (la ruta
+  pública no expone `Company.timezone`). Servir el archivo estático
+  (Nginx/CDN/bucket público) queda fuera de este cierre — es una
+  decisión operativa de cada entorno de cliente, no del código.
 - Bootstrap: sin cambios — El Roble ya tenía `web` y `medical` activos
   desde los cierres de esos módulos, y las rutas públicas no llevan
   RBAC (anónimas por diseño).
@@ -1217,7 +1234,64 @@ spec 7.1) — **Fases 1-4 completas**
   confirma cuál se consumió), marcar sustancia controlada, y verificar
   que la segunda dispensación sí generó una entrada real en el libro.
 
-### `audit` — paquete completo (módulo 25) — ✓ COMPLETO, VERIFICADO contra Postgres real
+### `pharmacy` — interacciones medicamentosas (módulo 17) — ✓ COMPLETO, VERIFICADO contra Postgres real
+
+> Cubre la parte "Interacciones [extendido]" del módulo 17 — la parte
+> "Sustancias Controladas [core]" ya había quedado cubierta dentro del
+> cierre del módulo 16 (DED-49). Recibido como ZIP separado, ramificado
+> de un estado del repo previo a los módulos 15 y 25 — mismo patrón de
+> merge que el módulo 25 (ver su nota de merge más abajo): se copiaron
+> sin conflicto los archivos exclusivos de este módulo, se aplicó a mano
+> el único cambio real sobre un archivo ya tocado (`bootstrap_admin.py`,
+> 2 permisos nuevos), y se reencadenó la migración nueva (`67040fb9b867`)
+> de `down_revision=1d9a25acd918` a `f3b6a1d9c204` (el head real en
+> `main` a esa altura) — documentado en la propia migración.
+>
+> **A diferencia de los módulos 15 y 25, esta migración no tuvo que
+> corregirse**: ya incluía `GRANT SELECT, INSERT, UPDATE, DELETE ON
+> product_active_ingredients TO erp_app` y `GRANT USAGE, SELECT ON
+> SEQUENCE product_active_ingredients_id_seq TO erp_app` desde el primer
+> intento, con un comentario propio citando explícitamente el bug
+> sistémico de `1d9a25acd918` como el motivo. Verificado contra Postgres
+> real (sesión de verificación externa, sep-2026): `alembic upgrade
+> head` corre limpio con `67040fb9b867` sobre las 27 migraciones
+> previas; `pytest tests/test_pharmacy_module.py` pasa completo, **158/158
+> tests en total** desde el primer intento, sin ningún bug propio de este
+> módulo que corregir; `contracts/openapi.json` recongelado contra el
+> servidor real (142 rutas / 177 operaciones); `npx vitest run` en verde
+> (19/19 archivos, 29/29 tests — ver el diagnóstico real, no relacionado
+> con este módulo, de una flakiness histórica de `AccountsPage`/
+> `StockPage` en `LOG_EJECUCION.md`, sección de esta misma sesión).
+
+- **2 tablas nuevas**:
+  - `product_active_ingredients` — multi-tenant, RLS estándar
+    (`tenant_isolation`, `company_id`), único `(company_id, product_id)`
+    — qué principio activo tiene cada producto DE ESTA compañía.
+  - `drug_interaction_reference_entries` — catálogo GLOBAL, sin RLS,
+    sin `company_id` (DED-53, mismo criterio que `permissions`: un
+    catálogo de referencia clínica no varía por compañía). Sin endpoint
+    de escritura pública — se administra por seed/migración, no por API
+    (mismo criterio que `permissions`). Seed fijo de 15 pares conocidos
+    y reales (DED-51, pedido explícito de Roberto — no una API externa),
+    con severidad `moderate`/`major`, siempre en orden alfabético
+    (`ingredient_a < ingredient_b`, check constraint) para que el lookup
+    de un par sea determinista sin importar en qué orden se pasen los
+    dos principios activos.
+- **3 rutas nuevas**: `POST/GET /pharmacy/products/active-ingredients`
+  (mapear/listar principio activo por producto),
+  `POST /pharmacy/interactions/check` (chequear interacciones entre un
+  conjunto de productos, resolviendo sus principios activos primero).
+  2 permisos nuevos (`pharmacy:interaction:manage`,
+  `pharmacy:interaction:check`) agregados a `scripts/bootstrap_admin.py`.
+- **Frontend**: `PharmacyPage.tsx` extendido (sección de interacciones),
+  `use-pharmacy.ts` extendido. A diferencia de `website`/`ecommerce`/
+  `reports`/`audit` (que usan un `*-temp-contract.ts` hecho a mano en vez
+  de tocar el cliente tipado "real"), este módulo sí actualizó
+  `frontend/src/lib/generated/{api-types,schemas}.ts` directamente —
+  ambos enfoques conviven en el proyecto; no hay codegen automático real
+  todavía (ver nota en la sección `website` sobre ese TODO).
+
+
 
 > **Nota de verificación externa (sep-2026, sesión posterior a la
 > escritura del módulo)**: se instaló Postgres real ad-hoc y se corrió
@@ -1386,11 +1460,12 @@ spec 7.1) — **Fases 1-4 completas**
 ## 5. Resumen rodante (últimos módulos cerrados — 22/23/24 y 16 se trabajaron
 en paralelo desde la misma base, portal/mensajería módulo 14; ver más abajo
 para módulos anteriores)
-- Módulo 15 (medical — reserva pública de citas) — **△ backend VERIFICADO
-  contra Postgres real** (sesión de verificación externa sep-2026;
-  originalmente escrito sin Postgres/red, mismo motivo que 22/23/24 en su
-  momento). Última pieza de la tabla de Médico, ya no bloqueada desde el
-  cierre de `website`.
+- Módulo 15 (medical — reserva pública de citas) — **✓ COMPLETO,
+  backend + widget VERIFICADOS contra Postgres real** (sesión de
+  verificación externa sep-2026, en dos partes: backend primero,
+  widget en una sesión posterior; originalmente escrito sin
+  Postgres/red, mismo motivo que 22/23/24 en su momento). Última pieza
+  de la tabla de Médico, ya no bloqueada desde el cierre de `website`.
   Sin tablas nuevas — reutiliza `Appointment`, con un flag retroactivo
   (`booked_via_public_widget`). Gating combinado nuevo
   (`ensure_public_booking_active`, exige `web` Y `medical` activos y no
@@ -1399,10 +1474,13 @@ para módulos anteriores)
   (`EXCLUDE USING gist`) sin duplicar la lógica de concurrencia. Contacto de
   paciente deduplicado por email con el mismo criterio que `website`
   (DED-46 → DED-58). Endpoint de disponibilidad deliberadamente minimalista
-  (solo rango horario, nunca PHI — DED-59). 9 tests backend escritos, sin
-  correr. **Sin frontend en este cierre** (TODO-45) — es un widget para el
-  sitio público, no para el panel administrativo, mismo argumento que ya
-  usó `ecommerce` para no construir su storefront.
+  (solo rango horario, nunca PHI — DED-59). 7 tests backend (no 9 —
+  número corregido tras contarlos contra el archivo real), todos en
+  verde. **Frontend construido y verificado** en
+  `public-widgets/medical-booking/` (TODO-45 cerrado) — widget
+  embebible vanilla JS, deliberadamente fuera de `frontend/`, mismo
+  argumento que ya usó `ecommerce` para no construir su storefront
+  dentro del panel.
 - **BUG REAL sistémico, encontrado y corregido en migración `1d9a25acd918`**:
   `bootstrap_admin.py` fallaba en CI con `permission denied for sequence
   ecommerce_settings_id_seq` al insertar como `erp_app` real (no
@@ -1589,17 +1667,17 @@ para módulos anteriores)
   11 tests backend + 3 tests frontend, todos reales. TODO-12 cerrado.
 
 ## 6. TODOs diferidos con contrato mínimo
-- TODO-44(medical — reserva pública de citas, módulo 15): checklist de
-  verificación real pendiente (migrar, pytest, congelar contrato) — ver
-  nota △ al inicio de su sección en este documento.
-- TODO-45(medical — reserva pública de citas, módulo 15): decidir y
-  construir el frontend público real (widget embebible) — este cierre
-  solo entrega las 2 rutas de API; no se construyó ningún HTML/JS
-  consumible todavía (TODO explícito, ver nota de frontend en su
-  sección).
+- TODO-44(medical — reserva pública de citas, módulo 15): ~~checklist de
+  verificación real pendiente (migrar, pytest, congelar contrato)~~ —
+  **cerrado**, ver nota de verificación al inicio de su sección.
+- TODO-45(medical — reserva pública de citas, módulo 15): ~~decidir y
+  construir el frontend público real (widget embebible)~~ — **cerrado**,
+  `public-widgets/medical-booking/`, ver nota de verificación en su
+  sección.
 - TODO-46([extendido] medical — reserva pública de citas, futuro):
   directorio público de profesionales bookeables (AMB-06) — si el
-  widget necesita listarlos en vez de recibir el id ya resuelto.
+  widget necesita listarlos en vez de recibir el id ya resuelto. Sigue
+  abierto — no se construyó, un `<div>` del widget = un profesional.
 - TODO-02(infraestructura/despliegue): refresh token a cookie httpOnly +
   `Secure` + `SameSite=Strict`.
 - TODO-03(cualquier módulo con `Idempotency-Key`): `idempotency_keys`

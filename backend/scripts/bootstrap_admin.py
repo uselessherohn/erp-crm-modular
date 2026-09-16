@@ -155,6 +155,8 @@ async def bootstrap():
             models.Permission(code="pharmacy:dispensation:read", description="Ver dispensaciones"),
             models.Permission(code="pharmacy:controlled_substance:manage", description="Marcar/desmarcar sustancias controladas"),
             models.Permission(code="pharmacy:controlled_substance:read-log", description="Ver libro de sustancias controladas"),
+            models.Permission(code="pharmacy:interaction:manage", description="Mapear principio activo de un producto"),
+            models.Permission(code="pharmacy:interaction:check", description="Chequear interacciones entre productos"),
             models.Permission(code="audit:log:read", description="Ver el registro de auditoría (módulo 25)"),
             models.Permission(code="audit:retention:read", description="Ver la política de retención de auditoría"),
             models.Permission(code="audit:retention:update", description="Editar la política de retención de auditoría"),

@@ -22,7 +22,13 @@ from app.database import AsyncSessionLocal
 from app.inventory import schemas as inventory_schemas
 from app.inventory.services import ProductService, StockService, WarehouseService
 from app.pharmacy import schemas as pharmacy_schemas
-from app.pharmacy.services import ControlledSubstanceLogService, ControlledSubstanceService, DispensationService
+from app.pharmacy.services import (
+    ControlledSubstanceLogService,
+    ControlledSubstanceService,
+    DispensationService,
+    DrugInteractionService,
+    ProductActiveIngredientService,
+)
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
 
@@ -300,3 +306,126 @@ async def test_rls_blocks_cross_tenant_dispensation_read():
 
         await db_a.rollback()
         await db_b.rollback()
+
+
+# ---------------------------------------------------------------------------------
+# Módulo 17 — Interacciones [extendido]. Ver DED-58 a DED-61 en models.py.
+# ---------------------------------------------------------------------------------------------
+@pytest_asyncio.fixture
+async def product_b(db, company):
+    unique = uuid.uuid4().hex[:6]
+    return await ProductService.create(
+        db, company_id=company.id,
+        payload=inventory_schemas.ProductCreate(
+            sku=f"MED-{unique}", name="Warfarina 5mg", product_type=inventory_schemas.ProductTypeEnum.consumible, tracks_lots=False,
+        ),
+        created_by=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_interaction_check_finds_known_pair(db, company, product, product_b):
+    """Amoxicilina (fixture `product`) + Metotrexato (fixture `product_b`) —
+    par real y conocido en el seed (DED-58), severidad 'moderate'."""
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product.id, active_ingredient="Amoxicillin"),
+    )
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product_b.id, active_ingredient="  METHOTREXATE "),
+    )
+
+    result = await DrugInteractionService.check(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InteractionCheckRequest(product_ids=[product.id, product_b.id]),
+    )
+
+    assert result.unchecked_product_ids == []
+    assert len(result.warnings) == 1
+    warning = result.warnings[0]
+    assert warning.severity == pharmacy_schemas.InteractionSeverityEnum.moderate
+    assert {warning.product_id_a, warning.product_id_b} == {product.id, product_b.id}
+    assert "metotrexato" in warning.description.lower()
+
+
+@pytest.mark.asyncio
+async def test_interaction_check_no_warning_for_unrelated_pair(db, company, product, product_b):
+    """Dos principios activos reales que NO están en el seed — sin
+    warning, sin falso positivo."""
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product.id, active_ingredient="paracetamol"),
+    )
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product_b.id, active_ingredient="loratadine"),
+    )
+
+    result = await DrugInteractionService.check(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InteractionCheckRequest(product_ids=[product.id, product_b.id]),
+    )
+
+    assert result.warnings == []
+    assert result.unchecked_product_ids == []
+
+
+@pytest.mark.asyncio
+async def test_interaction_check_reports_unmapped_product(db, company, product, product_b):
+    """Un producto sin principio activo mapeado (DED-59) aparece en
+    `unchecked_product_ids`, no rompe el chequeo del resto."""
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product.id, active_ingredient="ibuprofen"),
+    )
+    # product_b nunca se mapea.
+
+    result = await DrugInteractionService.check(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InteractionCheckRequest(product_ids=[product.id, product_b.id]),
+    )
+
+    assert result.warnings == []
+    assert result.unchecked_product_ids == [product_b.id]
+
+
+@pytest.mark.asyncio
+async def test_interaction_check_major_severity_and_description(db, company, product, product_b):
+    """Un par 'major' real del seed (aspirina + warfarina) — confirma
+    severidad alta y descripción no vacía."""
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product.id, active_ingredient="aspirin"),
+    )
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product_b.id, active_ingredient="warfarin"),
+    )
+
+    result = await DrugInteractionService.check(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InteractionCheckRequest(product_ids=[product.id, product_b.id]),
+    )
+
+    assert len(result.warnings) == 1
+    assert result.warnings[0].severity == pharmacy_schemas.InteractionSeverityEnum.major
+    assert len(result.warnings[0].description) > 0
+
+
+@pytest.mark.asyncio
+async def test_active_ingredient_set_is_idempotent_upsert(db, company, product):
+    """Volver a mapear el mismo producto actualiza el ingrediente, no
+    crea una segunda fila (uq_product_active_ingredients_company_product)."""
+    await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product.id, active_ingredient="aspirin"),
+    )
+    updated = await ProductActiveIngredientService.set(
+        db, company_id=company.id, created_by=None,
+        payload=pharmacy_schemas.ProductActiveIngredientSet(product_id=product.id, active_ingredient="ibuprofen"),
+    )
+
+    rows = await ProductActiveIngredientService.list(db, company_id=company.id)
+    assert len(rows) == 1
+    assert updated.active_ingredient == "ibuprofen"

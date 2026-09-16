@@ -149,3 +149,73 @@ describe("PharmacyPage — flujo real de pharmacy contra backend en 127.0.0.1:80
     await waitFor(() => expect(screen.getByText(new RegExp(`${productName} — 5`))).toBeInTheDocument(), { timeout: 10000 });
   }, 30000);
 });
+
+/**
+ * Módulo 17 — Interacciones [extendido]. Mapea principio activo para dos
+ * productos con un par conocido en el seed del DevStub (DED-51, backend:
+ * aspirin + warfarin, severidad 'major'), corre el chequeo desde la UI, y
+ * verifica que la advertencia se muestra con la severidad correcta.
+ */
+describe("PharmacyPage — Interacciones contra backend en 127.0.0.1:8000", () => {
+  let setupDone = false;
+  let productAName: string;
+  let productBName: string;
+
+  beforeAll(async () => {
+    if (setupDone) return;
+    setupDone = true;
+
+    const tokens = await apiRequest<{ access_token: string; refresh_token: string }>("/auth/login", {
+      method: "POST",
+      auth: false,
+      body: { email: "admin@elroble.hn", password: "SuperSegura123" },
+      responseSchema: schemas.TokenResponse,
+    });
+    setTokens(tokens.access_token, tokens.refresh_token);
+
+    const suffix = Date.now();
+    productAName = `Aspirina Interacciones ${suffix}`;
+    productBName = `Warfarina Interacciones ${suffix}`;
+    await apiRequest("/inventory/products", {
+      method: "POST",
+      body: { sku: `INT-A-${suffix}`, name: productAName, product_type: "consumible", tracks_lots: false },
+    });
+    await apiRequest("/inventory/products", {
+      method: "POST",
+      body: { sku: `INT-B-${suffix}`, name: productBName, product_type: "consumible", tracks_lots: false },
+    });
+  });
+
+  it("mapea principios activos y detecta una interacción conocida (severidad alta)", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText(/producto a mapear/i)).toBeInTheDocument(), { timeout: 15000 });
+
+    await user.click(screen.getByLabelText(/producto a mapear/i));
+    await user.click(await screen.findByRole("option", { name: productAName }));
+    await user.type(screen.getByPlaceholderText("Principio activo"), "aspirin");
+    await user.click(screen.getByRole("button", { name: /^guardar$/i }));
+
+    await waitFor(async () => {
+      await user.click(screen.getByLabelText(/producto a mapear/i));
+      expect(await screen.findByRole("option", { name: new RegExp(`${productAName} \\(aspirin\\)`) })).toBeInTheDocument();
+    }, { timeout: 10000 });
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByLabelText(/producto a mapear/i));
+    await user.click(await screen.findByRole("option", { name: productBName }));
+    await user.type(screen.getByPlaceholderText("Principio activo"), "warfarin");
+    await user.click(screen.getByRole("button", { name: /^guardar$/i }));
+
+    await user.click(screen.getByLabelText("Producto 1"));
+    await user.click(await screen.findByRole("option", { name: productAName }));
+    await user.click(screen.getByLabelText("Producto 2"));
+    await user.click(await screen.findByRole("option", { name: productBName }));
+
+    await user.click(screen.getByRole("button", { name: /^chequear$/i }));
+
+    await waitFor(() => expect(screen.getByText(/severidad alta/i)).toBeInTheDocument(), { timeout: 10000 });
+    expect(screen.getByText(new RegExp(`${productAName} \\+ ${productBName}`))).toBeInTheDocument();
+  }, 30000);
+});

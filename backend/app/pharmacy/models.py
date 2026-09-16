@@ -58,6 +58,35 @@ DECISIONES DEDUCIBLE/AMBIGUO de este módulo:
   es obligatorio y el llamador (router/frontend) siempre pasa el almacén
   de la sucursal autenticada — no hay lógica adicional que agregar
   cuando ese módulo se declare explícitamente construido.
+
+DECISIONES DEDUCIBLE/AMBIGUO del módulo 17 (Interacciones [extendido]):
+
+- DED-58: la spec (8.3) pide integración con una API externa de
+  referencia (RxNorm/DrugBank) y dice explícitamente "no modelar una
+  base propia desde cero salvo que se pida" — el sandbox de este
+  proyecto no tiene salida de red hacia esos dominios (mismo caso que
+  DED-37/DED-27). Mismo patrón: interfaz `DrugInteractionProvider`
+  (abstracta) + `DevStubDrugInteractionProvider` (implementación de
+  desarrollo) detrás de la misma interfaz. Roberto pidió explícitamente
+  el seed pequeño para el stub (10-20 pares conocidos, severidad alta) —
+  "salvo que se pida" aplica acá.
+- DED-59: `inventory.Product` no tiene principio activo — se agrega
+  `ProductActiveIngredient` (tabla propia de `pharmacy`, FK a
+  `inventory.Product`), NO una columna en el módulo 3 ya cerrado. Mismo
+  criterio que DED-46 (sustancias controladas). Un producto sin mapeo
+  simplemente no participa en el chequeo — declarado explícitamente,
+  nunca falla en silencio.
+- DED-60: `DrugInteractionReferenceEntry` (el catálogo de pares
+  conocidos) es una tabla GLOBAL, sin `company_id` — mismo criterio que
+  `core.Permission` (spec sección 1): un par de principios activos no
+  pertenece a una compañía, igual que no pertenecerá el día que se
+  conecte la API real.
+- DED-61: el chequeo es un endpoint de solo lectura independiente
+  (`POST /pharmacy/interactions/check`), no una modificación al
+  contrato ya congelado de `DispensationOrder` (módulo 16, cerrado y
+  verificado) — el frontend lo llama antes de confirmar una
+  dispensación y decide cómo mostrarlo; no bloquea nada a nivel de
+  backend porque la spec no especifica un bloqueo duro, solo "chequeo".
 """
 from __future__ import annotations
 
@@ -192,3 +221,61 @@ class ControlledSubstanceLogEntry(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class ProductActiveIngredient(Base):
+    """Interacciones [extendido] (spec 8.3). Ver DED-59 — `inventory.Product`
+    no tiene principio activo; esta tabla, propia de `pharmacy`, lo mapea
+    sin tocar el esquema del módulo 3. Un producto sin fila acá
+    simplemente no participa en el chequeo de interacciones."""
+
+    __tablename__ = "product_active_ingredients"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+    product_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("products.id"), nullable=False, index=True)
+
+    # Normalizado (minúsculas, sin espacios extra) para que el lookup
+    # contra DrugInteractionReferenceEntry sea consistente sin importar
+    # cómo se capturó el nombre comercial del producto.
+    active_ingredient: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "product_id", name="uq_product_active_ingredients_company_product"),
+    )
+
+
+class InteractionSeverityEnum(str, enum.Enum):
+    moderate = "moderate"
+    major = "major"
+
+
+INTERACTION_SEVERITIES = tuple(s.value for s in InteractionSeverityEnum)
+
+
+class DrugInteractionReferenceEntry(Base):
+    """Catálogo de referencia — GLOBAL, sin `company_id` (DED-60). Seed
+    pequeño a mano (10-20 pares conocidos, severidad alta) mientras no hay
+    integración con una API externa real (DED-58). `ingredient_a` /
+    `ingredient_b` se guardan siempre en orden alfabético (normalizados)
+    para que el lookup sea independiente del orden de los dos productos
+    que se estén dispensando juntos."""
+
+    __tablename__ = "drug_interaction_reference_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ingredient_a: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    ingredient_b: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("ingredient_a", "ingredient_b", name="uq_drug_interaction_reference_pair"),
+        CheckConstraint(f"severity IN {INTERACTION_SEVERITIES}", name="ck_drug_interaction_reference_severity"),
+        CheckConstraint("ingredient_a < ingredient_b", name="ck_drug_interaction_reference_alpha_order"),
+    )

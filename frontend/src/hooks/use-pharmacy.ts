@@ -8,6 +8,10 @@ type DispensationOrderCreate = z.infer<typeof schemas.DispensationOrderCreate>;
 type DispensationVoid = z.infer<typeof schemas.DispensationVoid>;
 type ControlledSubstanceProductRead = components["schemas"]["ControlledSubstanceProductRead"];
 type ControlledSubstanceLogEntryRead = components["schemas"]["ControlledSubstanceLogEntryRead"];
+type ProductActiveIngredientRead = components["schemas"]["ProductActiveIngredientRead"];
+type ProductActiveIngredientSet = z.infer<typeof schemas.ProductActiveIngredientSet>;
+type InteractionCheckRequest = z.infer<typeof schemas.InteractionCheckRequest>;
+type InteractionCheckResult = components["schemas"]["InteractionCheckResult"];
 
 export function useDispensationsForPatient(patientContactId: number | null) {
   return useQuery({
@@ -77,6 +81,37 @@ export function useControlledSubstanceLog() {
     queryFn: () =>
       apiRequest<ControlledSubstanceLogEntryRead[]>("/pharmacy/controlled-substances/log", {
         responseSchema: schemas.ControlledSubstanceLogEntryRead.array(),
+      }),
+  });
+}
+
+// Módulo 17 — Interacciones [extendido]. Ver DED-51 a DED-54 (backend).
+export function useProductActiveIngredients() {
+  return useQuery({
+    queryKey: ["pharmacy", "active-ingredients"],
+    queryFn: () =>
+      apiRequest<ProductActiveIngredientRead[]>("/pharmacy/products/active-ingredients", {
+        responseSchema: schemas.ProductActiveIngredientRead.array(),
+      }),
+  });
+}
+
+export function useSetProductActiveIngredient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ProductActiveIngredientSet) =>
+      apiRequest<ProductActiveIngredientRead>(`/pharmacy/products/${payload.product_id}/active-ingredient`, {
+        method: "PUT", body: payload, responseSchema: schemas.ProductActiveIngredientRead,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pharmacy", "active-ingredients"] }),
+  });
+}
+
+export function useCheckInteractions() {
+  return useMutation({
+    mutationFn: (payload: InteractionCheckRequest) =>
+      apiRequest<InteractionCheckResult>("/pharmacy/interactions/check", {
+        method: "POST", body: payload, responseSchema: schemas.InteractionCheckResult,
       }),
   });
 }

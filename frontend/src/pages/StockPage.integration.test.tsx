@@ -78,9 +78,19 @@ describe("StockPage — flujo real de inventory contra backend en 127.0.0.1:8000
 
   it("refleja el saldo real tras una entrada de stock", async () => {
     renderStockPage();
-    await waitFor(() => expect(screen.getByText(productName)).toBeInTheDocument());
-    expect(screen.getByText(warehouseName)).toBeInTheDocument();
-    expect(screen.getByText("75.0000")).toBeInTheDocument();
+    // Las 3 aserciones dependen de la misma respuesta async (la tabla de
+    // niveles de stock) — solo la primera estaba envuelta en `waitFor`;
+    // las otras dos corrían de forma síncrona justo después, sin esperar
+    // a que React terminara de pintar el resto de la fila. Bug real de
+    // este test, reproducido en esta sesión de verificación externa
+    // (sep-2026): pasa o falla según qué tan rápido resuelva esa
+    // respuesta en cada corrida — no es flaky de la app, es una carrera
+    // real contra el propio render.
+    await waitFor(() => {
+      expect(screen.getByText(productName)).toBeInTheDocument();
+      expect(screen.getByText(warehouseName)).toBeInTheDocument();
+      expect(screen.getByText("75.0000")).toBeInTheDocument();
+    });
   });
 
   it("registra un movimiento nuevo desde la UI y actualiza el saldo sin recargar", async () => {
