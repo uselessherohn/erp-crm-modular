@@ -8,7 +8,7 @@
  * tests de integración (sin navegador real, no CORS).
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -80,10 +80,18 @@ describe("PharmacyPage — flujo real de pharmacy contra backend en 127.0.0.1:80
 
     await waitFor(() => expect(screen.getByLabelText("Cliente")).toBeInTheDocument(), { timeout: 15000 });
 
+    // Bug real de este test, encontrado en esta sesión al fusionar el
+    // módulo 20 (reposición a droguerías): su sección de "Puntos de
+    // pedido" agrega un SEGUNDO selector también etiquetado "Sucursal"
+    // en la misma página, siempre visible — `getByLabelText("Sucursal")`
+    // dejó de ser único. Se acota la búsqueda a la sección de
+    // "Dispensación / Venta de mostrador" específicamente.
+    const dispensationSection = screen.getByRole("heading", { name: /dispensación.*venta de mostrador/i }).closest("section")!;
+
     await user.click(screen.getByLabelText("Cliente"));
     await user.click(await screen.findByRole("option", { name: customerName }));
 
-    await user.click(screen.getByLabelText("Sucursal"));
+    await user.click(within(dispensationSection).getByLabelText("Sucursal"));
     await user.click(await screen.findByRole("option", { name: warehouseName }));
 
     await user.click(screen.getByLabelText("Tipo"));
@@ -217,5 +225,132 @@ describe("PharmacyPage — Interacciones contra backend en 127.0.0.1:8000", () =
 
     await waitFor(() => expect(screen.getByText(/severidad alta/i)).toBeInTheDocument(), { timeout: 10000 });
     expect(screen.getByText(new RegExp(`${productAName} \\+ ${productBName}`))).toBeInTheDocument();
+  }, 30000);
+});
+
+/**
+ * Módulo 18 — Aseguradoras [extendido]. Crea una aseguradora (envuelve un
+ * contacto real con is_customer=true, DED-62), una dispensación real, y un
+ * reclamo — recorre el ciclo completo pending -> submitted -> approved ->
+ * paid desde la UI. `administrative` SÍ está activo en el seed de
+ * bootstrap_admin.py, así que ejercita la rama real `billing_mode=
+ * "accounting_invoice"` (Invoice/Payment reales contra la aseguradora como
+ * cliente) — la rama `claim_only` (administrative inactivo) ya está
+ * cubierta en pytest (test_claim_full_lifecycle_claim_only_when_
+ * administrative_inactive).
+ */
+describe("PharmacyPage — Aseguradoras/Reclamos contra backend en 127.0.0.1:8000", () => {
+  let setupDone = false;
+  let insurerName: string;
+  let patientName: string;
+  let orderDocumentNumber: string;
+
+  beforeAll(async () => {
+    if (setupDone) return;
+    setupDone = true;
+
+    const tokens = await apiRequest<{ access_token: string; refresh_token: string }>("/auth/login", {
+      method: "POST",
+      auth: false,
+      body: { email: "admin@elroble.hn", password: "SuperSegura123" },
+      responseSchema: schemas.TokenResponse,
+    });
+    setTokens(tokens.access_token, tokens.refresh_token);
+
+    const suffix = Date.now();
+    insurerName = `Aseguradora UI ${suffix}`;
+    patientName = `Paciente Seguro ${suffix}`;
+
+    await apiRequest("/contacts", { method: "POST", body: { name: insurerName, is_customer: true } });
+    const patient = await apiRequest<{ id: number }>("/contacts", { method: "POST", body: { name: patientName, is_customer: true } });
+
+    const warehouse = await apiRequest<{ id: number }>("/inventory/warehouses", { method: "POST", body: { name: `Bodega Seguro ${suffix}` } });
+    const product = await apiRequest<{ id: number }>("/inventory/products", {
+      method: "POST", body: { sku: `INS-${suffix}`, name: `Producto Seguro ${suffix}`, product_type: "consumible", tracks_lots: false },
+    });
+    await apiRequest("/inventory/stock-movements", {
+      method: "POST", body: { product_id: product.id, warehouse_id: warehouse.id, movement_type: "entrada", quantity: 10 },
+    });
+    const order = await apiRequest<{ document_number: string }>("/pharmacy/dispensations", {
+      method: "POST",
+      body: {
+        warehouse_id: warehouse.id, patient_contact_id: patient.id,
+        walk_in_reference: "Venta de mostrador", allergy_check_notes: "Sin alergias conocidas",
+        lines: [{ product_id: product.id, quantity: "1" }],
+      },
+    });
+    orderDocumentNumber = order.document_number;
+
+    // "administrative" está activo en el seed de bootstrap_admin.py, así
+    // que aprobar/pagar el reclamo ejercita la rama real de Invoice/Payment
+    // (DED-62/64) — necesita mapeos de cuenta reales, igual que en pytest
+    // (ver _setup_sales_invoice_account_mappings en test_pharmacy_module.py).
+    // No hay seed automático de plan de cuentas (spec DED-10).
+    const accountRoles: Array<{ role: string; name: string }> = [
+      { role: "receivable", name: "Cuentas por Cobrar" },
+      { role: "income", name: "Ingresos" },
+      { role: "tax", name: "Impuestos por Pagar" },
+      { role: "cash_bank", name: "Banco" },
+    ];
+    const accountIdByRole: Record<string, number> = {};
+    for (const { role, name } of accountRoles) {
+      const account = await apiRequest<{ id: number }>("/accounting/accounts", {
+        method: "POST", body: { code: `TEST-${role}-${suffix}`, name, account_type: role },
+      });
+      accountIdByRole[role] = account.id;
+    }
+    for (const role of ["receivable", "income", "tax"]) {
+      await apiRequest("/accounting/document-account-mappings", {
+        method: "POST", body: { document_type: "sales_invoice", role, account_id: accountIdByRole[role] },
+      });
+    }
+    for (const role of ["cash_bank", "receivable"]) {
+      await apiRequest("/accounting/document-account-mappings", {
+        method: "POST", body: { document_type: "payment_received", role, account_id: accountIdByRole[role] },
+      });
+    }
+  });
+
+  it("crea aseguradora, crea reclamo, y lo recorre pending -> paid desde la UI", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText(/contacto aseguradora/i)).toBeInTheDocument(), { timeout: 15000 });
+
+    await user.click(screen.getByLabelText(/contacto aseguradora/i));
+    await user.click(await screen.findByRole("option", { name: insurerName }));
+    await user.click(screen.getByRole("button", { name: /crear aseguradora/i }));
+
+    await waitFor(async () => {
+      await user.click(screen.getByLabelText(/aseguradora reclamo/i));
+      expect(await screen.findByRole("option", { name: insurerName })).toBeInTheDocument();
+    }, { timeout: 10000 });
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByLabelText(/paciente reclamo/i));
+    await user.click(await screen.findByRole("option", { name: patientName }));
+
+    await user.click(screen.getByLabelText(/dispensación reclamo/i));
+    await user.click(await screen.findByRole("option", { name: orderDocumentNumber }));
+
+    await user.click(screen.getByLabelText(/aseguradora reclamo/i));
+    await user.click(await screen.findByRole("option", { name: insurerName }));
+
+    await user.type(screen.getByPlaceholderText("Monto total"), "100");
+    await user.type(screen.getByPlaceholderText("Copago paciente"), "20");
+    await waitFor(() => expect(screen.getByText(/reclamado a aseguradora: 80.00/i)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /crear reclamo/i }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /^enviar$/i })).toBeInTheDocument(), { timeout: 10000 });
+    await user.click(screen.getByRole("button", { name: /^enviar$/i }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /^aprobar$/i })).toBeInTheDocument(), { timeout: 10000 });
+    await user.click(screen.getByRole("button", { name: /^aprobar$/i }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /marcar pagado/i })).toBeInTheDocument(), { timeout: 10000 });
+    await user.click(screen.getByRole("button", { name: /marcar pagado/i }));
+
+    await waitFor(() => expect(screen.getByText("paid")).toBeInTheDocument(), { timeout: 10000 });
   }, 30000);
 });

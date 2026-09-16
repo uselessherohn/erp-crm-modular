@@ -1475,6 +1475,87 @@ const InteractionCheckResult = z
     unchecked_product_ids: z.array(z.number().int()),
   })
   .passthrough();
+const InsuranceProviderCreate = z
+  .object({
+    contact_id: z.number().int(),
+    default_coverage_percentage: z
+      .union([z.number(), z.string(), z.null()])
+      .optional(),
+  })
+  .passthrough();
+const InsuranceProviderRead = z
+  .object({
+    id: z.number().int(),
+    contact_id: z.number().int(),
+    default_coverage_percentage: z.union([z.string(), z.null()]),
+    is_active: z.boolean(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const PatientInsurancePolicyCreate = z
+  .object({
+    patient_contact_id: z.number().int(),
+    insurance_provider_id: z.number().int(),
+    policy_number: z.string().min(1).max(100),
+    coverage_percentage: z.union([z.number(), z.string()]),
+  })
+  .passthrough();
+const PatientInsurancePolicyRead = z
+  .object({
+    id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    insurance_provider_id: z.number().int(),
+    policy_number: z.string(),
+    coverage_percentage: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+    is_active: z.boolean(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+const InsuranceClaimCreate = z
+  .object({
+    dispensation_order_id: z.number().int(),
+    insurance_provider_id: z.number().int(),
+    amount_total: z.union([z.number(), z.string()]),
+    amount_patient_copay: z.union([z.number(), z.string()]),
+    amount_claimed_insurer: z.union([z.number(), z.string()]),
+  })
+  .passthrough();
+const InsuranceClaimStatusEnum = z.enum([
+  "pending",
+  "submitted",
+  "approved",
+  "paid",
+  "rejected",
+]);
+const InsuranceClaimRead = z
+  .object({
+    id: z.number().int(),
+    dispensation_order_id: z.number().int(),
+    insurance_provider_id: z.number().int(),
+    patient_contact_id: z.number().int(),
+    claim_number: z.string(),
+    amount_total: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+    amount_patient_copay: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+    amount_claimed_insurer: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
+    status: InsuranceClaimStatusEnum,
+    billing_mode: z.union([z.string(), z.null()]),
+    invoice_id: z.union([z.number(), z.null()]),
+    payment_id: z.union([z.number(), z.null()]),
+    rejection_reason: z.union([z.string(), z.null()]),
+    created_at: z.string().datetime({ offset: true }),
+    submitted_at: z.union([z.string(), z.null()]),
+    approved_at: z.union([z.string(), z.null()]),
+    paid_at: z.union([z.string(), z.null()]),
+    rejected_at: z.union([z.string(), z.null()]),
+  })
+  .passthrough();
+const InsuranceClaimReject = z
+  .object({ rejection_reason: z.string().min(1).max(500) })
+  .passthrough();
+const InsuranceClaimPay = z
+  .object({ amount_paid: z.union([z.number(), z.string(), z.null()]) })
+  .partial()
+  .passthrough();
 
 export const schemas = {
   CompanyCreate,
@@ -1653,5 +1734,14 @@ export const schemas = {
   InteractionSeverityEnum,
   InteractionWarning,
   InteractionCheckResult,
+  InsuranceProviderCreate,
+  InsuranceProviderRead,
+  PatientInsurancePolicyCreate,
+  PatientInsurancePolicyRead,
+  InsuranceClaimCreate,
+  InsuranceClaimStatusEnum,
+  InsuranceClaimRead,
+  InsuranceClaimReject,
+  InsuranceClaimPay,
 };
 

@@ -1660,3 +1660,88 @@ limpias de punta a punta. `contracts/openapi.json` recongelado (142 rutas / 3 nu
 
 **Resultado**: módulo 17 (parte "Interacciones") pasa a `✓ Completo`, verificado contra Postgres
 real desde el primer cierre real de este módulo. `README.md`/`STATE.md` actualizados.
+
+---
+
+## Cierre de Farmacéutico: módulos 18 (aseguradoras), 20 (reposición) y 21 (MTM) (sep-2026)
+
+Recibidos como dos ZIPs separados, cada uno ramificado de una base distinta — mismo patrón de merge
+quirúrgico que los cierres anteriores (módulos 25 y 17):
+
+- **`erp-crm-modular-main.zip`** (sin sufijo de número) → módulo 18 (Aseguradoras/Copagos),
+  ramificado justo después del módulo 17 (`67040fb9b867`). Migración `a3f8c1d9e0b2` ya venía
+  correctamente encadenada, con `GRANT` de tabla y secuencia correctos desde el principio.
+- **`erp-crm-modular-main-modulo20.zip`** → en realidad trae DOS módulos: 21 (MTM, `b7e2f5a13c68`) y
+  20 (Reposición a Droguerías, `c4d8b3f61a97`), ramificados directo del estado ya verificado de los
+  módulos 15/25 (`f3b6a1d9c204`), sin conocer todavía el 17/18 (que para entonces ya estaban en
+  `main`).
+
+**Reencadene de migraciones**: había dos puntas de la cadena (17→18 por un lado, 21→20 por otro,
+ambas arrancando de `f3b6a1d9c204`). Se reencadenó `b7e2f5a13c68` (MTM) de
+`down_revision=f3b6a1d9c204` a `down_revision=a3f8c1d9e0b2` (tip real de farmacia a esa altura),
+dejando una sola cadena lineal: `f3b6a1d9c204` → `67040fb9b867`(17) → `a3f8c1d9e0b2`(18) →
+`b7e2f5a13c68`(21) → `c4d8b3f61a97`(20).
+
+**Aislamiento de diffs reales vía `patch`, no copia manual completa.** Dado el volumen (3 módulos
+completos), se generaron diffs puros contra cada base real (`base-5f9662b` para 18, y el mismo para
+20/21 acotado a los archivos relevantes) y se aplicaron con `patch -p1 --fuzz=5` sobre el árbol ya
+fusionado, en vez de copiar archivos completos y reconciliar a mano — funcionó para la gran mayoría
+de hunks, con 3 rechazos esperados (conflictos de imports entre módulos independientes tocando la
+misma zona del archivo), resueltos a mano.
+
+**Dos artefactos reales de la propia herramienta de parcheo, no bugs de ningún módulo**, encontrados
+porque `pytest` y `bootstrap_admin.py` fallaron de verdad contra Postgres real (no por inspección
+visual del diff):
+1. `pharmacy/services.py`: el parche difuso (`--fuzz=5`) truncó el `return` de
+   `ControlledSubstanceLogService.list` (método del módulo 16 original, sin relación con 18/20/21) —
+   `SyntaxError: invalid syntax` real al compilar. Peor aún, el primer intento de arreglo dejó un
+   fragmento duplicado (`)` + `return list(...)` sobrante más abajo en el archivo) que produjo un
+   segundo `SyntaxError: unmatched ')'` — encontrado recién al recompilar después del primer fix, no
+   en la primera pasada. Corregido verificando `py_compile` limpio y contando clases (`grep "^class "`)
+   contra lo esperado antes de seguir.
+2. `bootstrap_admin.py`: el mismo parcheo difuso duplicó un bloque de 3 permisos de `audit` —
+   `bootstrap_admin.py` fallaba con `UniqueViolationError: duplicate key value violates unique
+   constraint "ix_permissions_code"` al insertar `audit:log:read` dos veces. Corregido eliminando el
+   bloque repetido.
+
+**Dos bugs reales, genuinos, de los propios módulos:**
+1. Migraciones de MTM (`b7e2f5a13c68`) y Reposición (`c4d8b3f61a97`) — **tercera aparición del mismo
+   bug sistémico** ya documentado en `1d9a25acd918` (secuencias) y reencontrado en `f3b6a1d9c204`
+   (módulo 25, tabla): ninguna de las dos migraciones otorgaba `GRANT` a `erp_app` sobre sus tablas
+   nuevas ni sus secuencias. A diferencia de los módulos 17 y 18 (que sí lo evitaron proactivamente,
+   citando `1d9a25acd918` en su propio comentario), estas dos no. Corregido agregando los `GRANT`
+   explícitos a ambas migraciones, con nota citando el patrón repetido, antes de correr contra
+   Postgres real por primera vez — así que nunca llegó a fallar en un pytest real, se atrapó en
+   revisión de la migración misma.
+2. `test_mtm_session_close_with_administrative_posts_real_invoice` fallaba con
+   `ValidationError: No hay cuenta configurada para el rol 'receivable' del documento 'sales_invoice'`
+   — el mismo patrón exacto ya visto en `test_ecommerce_module.py`/`test_reports_module.py`: el test
+   no configuraba `DocumentAccountMapping` antes de que `MtmSessionService.close()` (con
+   `administrative` activo) contabilizara una factura real. Corregido agregando la misma llamada al
+   helper `_setup_sales_invoice_account_mappings` que ya existía en el archivo (usado por el test de
+   reclamos de aseguradoras del módulo 18).
+
+**Bug real de frontend, encontrado en Vitest**: `PharmacyPage.integration.test.tsx` (el test
+ORIGINAL de dispensación, del módulo 16, sin relación directa con 18/20/21) dejó de pasar —
+`TestingLibraryElementError: Found multiple elements with the text of: Sucursal`. Causa real: el
+módulo 20 (Reposición) agrega su propio selector de almacén, también con `aria-label="Sucursal"`,
+en la misma pantalla de `PharmacyPage`, siempre visible junto al selector de la sección de
+dispensación. Corregido acotando la búsqueda con `within()` a la sección "Dispensación / Venta de
+mostrador" específicamente (localizada por su `<h2>`), en vez de buscar en toda la página.
+
+**Verificación final, base recreada de cero, una sola corrida limpia**: `alembic upgrade head`
+corre limpio con las 31 migraciones (13 más que al cierre del módulo 15); `pytest tests/` —
+**185/185** (158 previos + 5 de aseguradoras + 5 de MTM + ~17 de reposición, más el fix del test de
+MTM); `contracts/openapi.json` recongelado contra el servidor real: **162 rutas / 200 operaciones**
+(20 nuevas: 8 de aseguradoras, 6 de MTM, 6 de reposición); `verify_state.py --db-url` y
+`validate_modules.py` sin errores; `tsc -b` y `npm run build` limpios; `npx vitest run` —
+**19/19 archivos, 30/30 tests**.
+
+**TODO nuevo, no bloqueante, documentado igual que el de `audit`**: ninguno de los tres módulos
+(18/20/21) trae su propio archivo de test de integración de frontend — la única cobertura de
+frontend que tocan es el fix de scoping sobre el test ORIGINAL de dispensación. Cobertura de
+frontend específica de aseguradoras/MTM/reposición queda pendiente para un cierre futuro.
+
+**Resultado**: Farmacéutico queda **completo de punta a punta** (sus 5 módulos construibles hoy: 16,
+17, 18, 20, 21 — 19 sigue cubierto dentro de 16 por DED-49). `README.md`/`STATE.md` actualizados: 25
+módulos completos de punta a punta (antes 22).

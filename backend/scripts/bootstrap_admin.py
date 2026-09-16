@@ -155,11 +155,17 @@ async def bootstrap():
             models.Permission(code="pharmacy:dispensation:read", description="Ver dispensaciones"),
             models.Permission(code="pharmacy:controlled_substance:manage", description="Marcar/desmarcar sustancias controladas"),
             models.Permission(code="pharmacy:controlled_substance:read-log", description="Ver libro de sustancias controladas"),
-            models.Permission(code="pharmacy:interaction:manage", description="Mapear principio activo de un producto"),
-            models.Permission(code="pharmacy:interaction:check", description="Chequear interacciones entre productos"),
+            models.Permission(code="pharmacy:mtm_session:create", description="Crear/cerrar/cancelar sesiones de MTM (módulo 21)"),
+            models.Permission(code="pharmacy:mtm_session:read", description="Ver sesiones de MTM y su facturación"),
+            models.Permission(code="pharmacy:reorder_point:manage", description="Configurar puntos de pedido y generar PO de reposición (módulo 20)"),
+            models.Permission(code="pharmacy:reorder_point:read", description="Ver puntos de pedido y sugerencias de reposición"),
             models.Permission(code="audit:log:read", description="Ver el registro de auditoría (módulo 25)"),
             models.Permission(code="audit:retention:read", description="Ver la política de retención de auditoría"),
             models.Permission(code="audit:retention:update", description="Editar la política de retención de auditoría"),
+            models.Permission(code="pharmacy:interaction:manage", description="Mapear principio activo de un producto"),
+            models.Permission(code="pharmacy:interaction:check", description="Chequear interacciones entre productos"),
+            models.Permission(code="pharmacy:insurance:manage", description="Administrar aseguradoras y pólizas de pacientes"),
+            models.Permission(code="pharmacy:insurance:claim", description="Crear y gestionar el ciclo de vida de reclamos a aseguradoras"),
         ]
         db.add_all(perms)
         await db.flush()

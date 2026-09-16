@@ -10,15 +10,17 @@ lo hecho, fase por fase).
 
 ## Estado actual del proyecto
 
-**22 módulos completos de punta a punta** — el paquete Administrativo
+**25 módulos completos de punta a punta** — el paquete Administrativo
 está completo, Médico tiene sus 6 módulos construibles hoy completos
 (incluido el 15, con su widget embebible verificado end-to-end contra
 Postgres real), el paquete Web (website/ecommerce) está completo,
-notifications, reports y audit completo (módulo 25) en Transversal, y el
-paquete Farmacéutico tiene dos módulos: dispensación (que además cubre,
-dentro del mismo cierre, la parte core de sustancias controladas y el
-flujo de POS farmacia — ver DED-49 en `STATE.md`) e interacciones
-medicamentosas (módulo 17):
+notifications, reports y audit completo (módulo 25) en Transversal, y
+el paquete Farmacéutico está completo de punta a punta — sus 5 módulos
+construibles hoy: dispensación (que además cubre, dentro del mismo
+cierre, la parte core de sustancias controladas y el flujo de POS
+farmacia — ver DED-49 en `STATE.md`), interacciones medicamentosas,
+aseguradoras/copagos, reposición a droguerías y MTM/consulta
+farmacéutica:
 
 | # | Módulo | Paquete | Estado |
 |---|--------|---------|--------|
@@ -39,15 +41,20 @@ medicamentosas (módulo 17):
 | 15 | medical — reserva pública de citas (widget) | Médico | ✓ Completo — backend + widget embebible, verificado contra Postgres real |
 | 16 | pharmacy — dispensación + verificación clínica (incluye sustancias controladas y POS farmacia) | Farmacéutico | ✓ Completo |
 | 17 | pharmacy — interacciones medicamentosas (sustancias controladas ya cubierta en el módulo 16, DED-49) | Farmacéutico | ✓ Completo — verificado contra Postgres real |
+| 18 | pharmacy — aseguradoras / copagos | Farmacéutico | ✓ Completo — verificado contra Postgres real |
+| 20 | pharmacy — reposición a droguerías | Farmacéutico | ✓ Completo — verificado contra Postgres real |
+| 21 | pharmacy — MTM / consulta farmacéutica | Farmacéutico | ✓ Completo — verificado contra Postgres real |
 | 22 | website (CMS, formularios) | Web | ✓ Completo |
 | 23 | ecommerce (carrito, checkout, pagos) | Web | ✓ Completo |
 | 24 | reports | Transversal | ✓ Completo |
 | 25 | audit completo (UI, retención configurable, reportería) | Transversal | ✓ Completo — verificado contra Postgres real |
 | 26 | notifications | Transversal | ✓ Completo |
 
-De Farmacéutico faltan Aseguradoras/Copagos, Reposición a Droguerías y
-MTM (módulos 18, 20, 21, todos `[extendido]`) — Interacciones (módulo
-17) ya se cerró y verificó en esta sesión. De Transversal ya no falta
+Farmacéutico ya no tiene ningún módulo `[extendido]` pendiente — los
+últimos tres (Aseguradoras/Copagos, Reposición a Droguerías y MTM,
+módulos 18/20/21) se cerraron y verificaron en esta sesión, sumados a
+Interacciones (módulo 17) de la sesión anterior. De Transversal ya no
+falta
 nada construible hoy (audit completo, módulo 25, se cerró y verificó en
 esta sesión — el audit mínimo ya vivía en el módulo 1).
 
@@ -115,6 +122,37 @@ quedó recongelado contra el servidor real (142 rutas / 177 operaciones),
 y `npx vitest run` (frontend, contra el backend y la base reales, sin
 mocks) queda en **19/19 archivos, 29/29 tests**.
 
+**Cierre de Farmacéutico completo** (sesión posterior, tres módulos
+recibidos como dos ZIPs separados — módulo 18 ramificado justo después
+del 17, y módulos 20/21 juntos, ramificados directo del estado ya
+verificado de los módulos 15/25, sin conocer todavía el 17/18): se
+aplicó el mismo merge quirúrgico que en cierres anteriores, aislando
+cada diff contra su base real y reencadenando las 3 migraciones nuevas
+en una sola cadena lineal (17→18→21→20). El merge automático de
+parches dejó dos artefactos reales que hubo que corregir a mano: una
+función truncada en `pharmacy/services.py` (contenido cortado por el
+parche difuso) y un bloque de permisos duplicado en
+`bootstrap_admin.py` — ninguno de los dos es un bug del código
+original, ambos son ruido propio de la herramienta de parcheo, y se
+verificaron ambos arreglos contra Postgres real antes de seguir.
+Además se encontraron **dos bugs reales genuinos**, ninguno relacionado
+con el contenido de los tres módulos en sí: (1) las migraciones de MTM y
+Reposición a Droguerías no le otorgaban permisos a `erp_app` sobre sus
+tablas nuevas — tercera vez que aparece este mismo bug sistémico (ver
+`1d9a25acd918` y la nota del módulo 25 más arriba) —, corregido antes de
+correr contra Postgres real por primera vez; y (2) el test de cierre de
+sesión de MTM con facturación real no configuraba el mapeo contable
+necesario (mismo patrón ya visto en `test_ecommerce_module.py`/
+`test_reports_module.py`), corregido agregando el mismo helper ya
+existente. Por último, `PharmacyPage.integration.test.tsx` (el test
+original de dispensación, del módulo 16) dejó de pasar porque el módulo
+20 agrega un segundo selector "Sucursal" en la misma pantalla — corregido
+acotando la búsqueda a la sección de dispensación específicamente.
+Con todo corregido: `pytest tests/` queda en **185/185**, 31 migraciones
+limpias de punta a punta, `contracts/openapi.json` recongelado (162
+rutas / 200 operaciones), y `npx vitest run` en **19/19 archivos, 30/30
+tests**.
+
 **Corrección (sesión posterior, cierre del widget del módulo 15 y del
 módulo de Interacciones — ver más abajo)**: en esta misma sesión se
 había reportado que `AccountsPage.integration.test.tsx` fallaba por
@@ -167,7 +205,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 158 tests; ver nota abajo sobre el estado real de la corrida
+pytest tests/ -q   # 185 tests; ver nota abajo sobre el estado real de la corrida
 
 # Frontend
 cd frontend

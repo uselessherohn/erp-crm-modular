@@ -51,13 +51,18 @@ DECISIONES DEDUCIBLE/AMBIGUO de este módulo:
   (con sus propias reglas: ¿se puede devolver un controlado? ¿el lote
   original sigue vigente?).
 - Interacciones [extendido], Aseguradoras [extendido], Reposición a
-  Droguerías [extendido], MTM [extendido] y Multi-sucursal [core, si
-  aplica] — NO construidos en este cierre (regla 1 del Mensaje 0, son
-  módulos separados en la tabla, 17-21). Multi-sucursal en particular ya
-  queda parcialmente resuelto por diseño: `DispensationOrder.warehouse_id`
+  Droguerías [extendido] y Multi-sucursal [core, si aplica] — NO
+  construidos en este cierre (regla 1 del Mensaje 0, son módulos
+  separados en la tabla, 17-21). Multi-sucursal en particular ya queda
+  parcialmente resuelto por diseño: `DispensationOrder.warehouse_id`
   es obligatorio y el llamador (router/frontend) siempre pasa el almacén
   de la sucursal autenticada — no hay lógica adicional que agregar
   cuando ese módulo se declare explícitamente construido.
+
+MTM / Consulta Farmacéutica (módulo 21, spec 8.3, "MTM / Consulta
+Farmacéutica [extendido]") se agregó en un cierre posterior — ver
+docstring de `MtmSession`/`MtmBillingRecord` más abajo para sus propias
+decisiones DEDUCIBLE/AMBIGUO (DED-62 a DED-64).
 
 DECISIONES DEDUCIBLE/AMBIGUO del módulo 17 (Interacciones [extendido]):
 
@@ -96,11 +101,14 @@ from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -223,6 +231,193 @@ class ControlledSubstanceLogEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
+# ---------------------------------------------------------------------------
+# Módulo 21 — pharmacy: MTM / Consulta Farmacéutica (spec 8.3, "MTM /
+# Consulta Farmacéutica [extendido]"). `depende_de: [16]` en la tabla de
+# módulos — reutiliza `Contact` (paciente/cliente) y el motor de
+# asientos de `accounting`, no agrega dependencia nueva de paquete.
+#
+# DECISIONES DEDUCIBLE/AMBIGUO de este módulo:
+#
+# - DED-62: dos tablas, no una — `MtmSession` (contenido clínico de la
+#   sesión: revisión de medicación, adherencia, efectos adversos) y
+#   `MtmBillingRecord` (documento financiero, modo dual
+#   `accounting_invoice`/`simple_receipt`) — mismo desacople que
+#   `Consultation`/`MedicalBillingRecord` en el módulo 13 ("mismo patrón
+#   que Facturación Médica Básica en 8.2", spec 8.3 explícito). La
+#   diferencia real frente al módulo 13 es el disparador: acá NO es una
+#   acción separada del usuario ("facturar esta consulta"), sino que
+#   CERRAR la sesión genera el comprobante en la misma operación (spec
+#   9, tabla de integraciones: "Sesión de asesoría cerrada" es
+#   literalmente el disparador listado) — `MtmSessionService.close()`
+#   hace ambas cosas en una sola transacción, no expone un endpoint de
+#   facturación separado como sí existe para `medical`.
+# - DED-63: gating igual que el módulo 13 — `accounting_invoice` si
+#   `administrative` (paquete completo) está activo, `simple_receipt`
+#   si no (spec sección 9, fila "Farmacéutico (MTM) → Administrativo
+#   (accounting)": "Comprobante simple sin asiento contable si
+#   Administrativo no está activo"). No se gatea con `accounting`
+#   mínimo porque ese nivel mínimo (spec 8.3, cabecera del paquete) es
+#   el que ya usa `pharmacy` para copagos/reclamos, sin exponer un
+#   motor de asientos completo — mismo razonamiento que DED-40 en
+#   `medical`.
+# - DED-64: `patient_contact_id` es cualquier `Contact` de la compañía,
+#   sin exigir `is_patient=true` — mismo criterio que DED-48
+#   (dispensación): un cliente de MTM no tiene por qué ser paciente de
+#   `medical`, que puede ni siquiera estar activo.
+# ---------------------------------------------------------------------------
+class MtmSessionStatusEnum(str, enum.Enum):
+    open = "open"
+    closed = "closed"
+    cancelled = "cancelled"
+
+
+MTM_SESSION_STATUSES = tuple(s.value for s in MtmSessionStatusEnum)
+
+
+class MtmBillingModeEnum(str, enum.Enum):
+    accounting_invoice = "accounting_invoice"
+    simple_receipt = "simple_receipt"
+
+
+MTM_BILLING_MODES = tuple(m.value for m in MtmBillingModeEnum)
+
+
+class MtmSession(Base):
+    """MTM / Consulta Farmacéutica [extendido] — spec 8.3. Ver DED-62/64
+    arriba. `status='open'` mientras se captura la sesión;
+    `'closed'` una vez facturada (ver `MtmSessionService.close`,
+    genera el `MtmBillingRecord` en la misma transacción);
+    `'cancelled'` si la sesión se agenda/inicia pero nunca se completa
+    (nunca llega a generar comprobante — a diferencia de anular un
+    comprobante ya emitido, que es `MtmBillingRecord.status`)."""
+
+    __tablename__ = "pharmacy_mtm_sessions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+
+    patient_contact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=False, index=True)
+    pharmacist_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+
+    session_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    medication_review: Mapped[str] = mapped_column(Text, nullable=False)
+    adherence_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    adverse_effects_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    fee_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False, server_default="HNL")
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="open")
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(f"status IN {MTM_SESSION_STATUSES}", name="ck_pharmacy_mtm_sessions_status"),
+        CheckConstraint("fee_amount > 0", name="ck_pharmacy_mtm_sessions_fee_positive"),
+    )
+
+
+class MtmBillingRecord(Base):
+    """Documento financiero de una sesión de MTM cerrada. Estructura
+    deliberadamente idéntica a `medical.MedicalBillingRecord` (módulo
+    13) — mismo modo dual, ver DED-62/63 arriba."""
+
+    __tablename__ = "pharmacy_mtm_billing_records"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+
+    session_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("pharmacy_mtm_sessions.id"), nullable=False, unique=True, index=True)
+
+    billing_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="issued")
+
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False, server_default="HNL")
+    issue_date: Mapped[Date] = mapped_column(Date, nullable=False)
+
+    # billing_mode == accounting_invoice
+    invoice_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("invoices.id"), nullable=True)
+    # billing_mode == simple_receipt
+    receipt_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(f"billing_mode IN {MTM_BILLING_MODES}", name="ck_pharmacy_mtm_billing_records_mode"),
+        CheckConstraint("status IN ('issued', 'cancelled')", name="ck_pharmacy_mtm_billing_records_status"),
+        CheckConstraint("amount > 0", name="ck_pharmacy_mtm_billing_records_amount_positive"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Módulo 20 — pharmacy: Reposición a Droguerías (spec 8.3, "Reposición a
+# Droguerías [extendido]": "sugerencia de reorden por punto de pedido,
+# opcionalmente generando una PO en `purchasing` si el Administrativo
+# completo está presente; si no, queda como lista exportable sin flujo
+# de aprobación").
+#
+# DECISIONES DEDUCIBLE/AMBIGUO de este módulo:
+#
+# - DED-65: el punto de pedido se configura por producto+almacén
+#   (`PharmacyReorderPoint`), no a nivel de producto solo — spec 8.3
+#   nota multi-sucursal (v9): "cada sucursal es un almacén... nunca
+#   contra el stock consolidado de la cadena" — un punto de pedido único
+#   por producto ignoraría esa restricción explícita si una cadena tiene
+#   sucursales con patrones de consumo distintos.
+# - DED-66: "lista exportable" (sin `administrative`) se interpreta como
+#   "el frontend puede exportar la tabla que ya devuelve el listado" —
+#   NO se construyó un endpoint de exportación a CSV/PDF dedicado para
+#   esto. `reports` (módulo 24) ya tiene ese mecanismo genérico para
+#   quien lo necesite; duplicarlo acá sería alcance no pedido por la
+#   spec (que solo exige que la lista exista, no un formato de archivo
+#   específico).
+# - DED-67: generar la PO no valida que `payload.lines` coincida
+#   exactamente con las sugerencias vigentes — el pharmacista puede
+#   ajustar cantidades/costos antes de confirmar (el costo unitario en
+#   particular NO puede inferirse de la sugerencia: `purchasing` no
+#   guarda un "costo esperado" por producto, solo el costo real de cada
+#   PO ya creada). Mismo criterio de "el sistema sugiere, el humano
+#   decide" que ya aplica en el resto del proyecto (ej. sugerencias de
+#   reorden de cualquier ERP de referencia).
+# ---------------------------------------------------------------------------
+class PharmacyReorderPoint(Base):
+    """Configuración de reorden por producto+almacén. Ver DED-65 arriba.
+    No es la sugerencia en sí (esa se calcula al vuelo comparando esto
+    contra `StockLevel`, no se persiste) — es solo el umbral configurado."""
+
+    __tablename__ = "pharmacy_reorder_points"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+
+    product_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("products.id"), nullable=False, index=True)
+    warehouse_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("warehouses.id"), nullable=False, index=True)
+
+    reorder_point: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    reorder_quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    preferred_vendor_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "product_id", "warehouse_id", name="uq_pharmacy_reorder_points_product_warehouse"),
+        CheckConstraint("reorder_point >= 0", name="ck_pharmacy_reorder_points_point_nonneg"),
+        CheckConstraint("reorder_quantity > 0", name="ck_pharmacy_reorder_points_quantity_positive"),
+    )
+
+
 class ProductActiveIngredient(Base):
     """Interacciones [extendido] (spec 8.3). Ver DED-59 — `inventory.Product`
     no tiene principio activo; esta tabla, propia de `pharmacy`, lo mapea
@@ -278,4 +473,123 @@ class DrugInteractionReferenceEntry(Base):
         UniqueConstraint("ingredient_a", "ingredient_b", name="uq_drug_interaction_reference_pair"),
         CheckConstraint(f"severity IN {INTERACTION_SEVERITIES}", name="ck_drug_interaction_reference_severity"),
         CheckConstraint("ingredient_a < ingredient_b", name="ck_drug_interaction_reference_alpha_order"),
+    )
+
+
+# ---------------------------------------------------------------------------------------------
+# Módulo 18 — Aseguradoras [extendido] (spec 8.3): copagos, reclamos,
+# conciliación con accounting.
+# ---------------------------------------------------------------------------------------------
+CLAIM_STATUSES = ("pending", "submitted", "approved", "paid", "rejected")
+
+
+class InsuranceClaimStatusEnum(str, enum.Enum):
+    pending = "pending"
+    submitted = "submitted"
+    approved = "approved"
+    paid = "paid"
+    rejected = "rejected"
+
+
+class InsuranceProvider(Base):
+    """DED-62: la aseguradora ENVUELVE un `Contact` existente (mismo
+    criterio que "cliente de farmacia = cualquier Contact", DED-55) en vez
+    de ser una entidad aislada — así se reutiliza el motor real de
+    `Invoice`/`Payment` de `accounting` para facturarle, sin reinventar un
+    sub-libro contable propio."""
+
+    __tablename__ = "insurance_providers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+    contact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=False, index=True)
+
+    default_coverage_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "contact_id", name="uq_insurance_providers_company_contact"),
+        CheckConstraint(
+            "default_coverage_percentage IS NULL OR (default_coverage_percentage >= 0 AND default_coverage_percentage <= 100)",
+            name="ck_insurance_providers_coverage_range",
+        ),
+    )
+
+
+class PatientInsurancePolicy(Base):
+    """Vínculo paciente↔aseguradora con su % de cobertura (DED-63:
+    modelado como porcentaje, no copago fijo por medicamento — la spec no
+    especifica reglas por producto, y un porcentaje simple es lo mínimo
+    que sostiene "copagos, reclamos, conciliar cobrado vs. reclamado")."""
+
+    __tablename__ = "patient_insurance_policies"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+    patient_contact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=False, index=True)
+    insurance_provider_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("insurance_providers.id"), nullable=False, index=True)
+
+    policy_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    coverage_percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id", "patient_contact_id", "insurance_provider_id",
+            name="uq_patient_insurance_policies_company_patient_provider",
+        ),
+        CheckConstraint("coverage_percentage >= 0 AND coverage_percentage <= 100", name="ck_patient_insurance_policies_coverage_range"),
+    )
+
+
+class InsuranceClaim(Base):
+    """Reclamo — FK a `DispensationOrder` (módulo 16, YA CERRADO) sin
+    modificar esa tabla, mismo criterio que DED-59/60/61 del módulo 17.
+
+    Ciclo: pending -> submitted -> approved -> paid | rejected. Solo se
+    contabiliza (Invoice real) al pasar a 'approved', y se liquida (Payment
+    real) al pasar a 'paid' — 'submitted'/'rejected' nunca tocan
+    `accounting`, así nunca hace falta reversar un asiento si rechazan un
+    reclamo que nunca se llegó a booking (DED-64)."""
+
+    __tablename__ = "insurance_claims"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+    dispensation_order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("dispensation_orders.id"), nullable=False, index=True)
+    insurance_provider_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("insurance_providers.id"), nullable=False, index=True)
+    patient_contact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contacts.id"), nullable=False, index=True)
+
+    claim_number: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    amount_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    amount_patient_copay: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    amount_claimed_insurer: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    # DED-40/42 (medical): 'administrative' activo -> se usa el motor real
+    # de accounting (Invoice/Payment); si no, el reclamo solo lleva estado
+    # y montos, sin generar ningún documento contable (TODO explícito).
+    billing_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    invoice_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("invoices.id"), nullable=True)
+    payment_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("payments.id"), nullable=True)
+
+    rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "dispensation_order_id", name="uq_insurance_claims_company_dispensation"),
+        UniqueConstraint("company_id", "claim_number", name="uq_insurance_claims_company_claim_number"),
+        CheckConstraint(f"status IN {CLAIM_STATUSES}", name="ck_insurance_claims_status"),
+        CheckConstraint("amount_total = amount_patient_copay + amount_claimed_insurer", name="ck_insurance_claims_amounts_sum"),
+        CheckConstraint("amount_patient_copay >= 0 AND amount_claimed_insurer >= 0", name="ck_insurance_claims_amounts_nonneg"),
     )

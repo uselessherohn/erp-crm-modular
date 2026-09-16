@@ -2350,6 +2350,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pharmacy/insurance-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Insurance Providers */
+        get: operations["list_insurance_providers_pharmacy_insurance_providers_get"];
+        put?: never;
+        /** Create Insurance Provider */
+        post: operations["create_insurance_provider_pharmacy_insurance_providers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Patient Insurance Policy */
+        post: operations["create_patient_insurance_policy_pharmacy_insurance_policies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-policies/patient/{patient_contact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Patient Insurance Policies */
+        get: operations["list_patient_insurance_policies_pharmacy_insurance_policies_patient__patient_contact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Insurance Claims */
+        get: operations["list_insurance_claims_pharmacy_insurance_claims_get"];
+        put?: never;
+        /** Create Insurance Claim */
+        post: operations["create_insurance_claim_pharmacy_insurance_claims_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-claims/{claim_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Insurance Claim */
+        get: operations["get_insurance_claim_pharmacy_insurance_claims__claim_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-claims/{claim_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Insurance Claim */
+        post: operations["submit_insurance_claim_pharmacy_insurance_claims__claim_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-claims/{claim_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Insurance Claim */
+        post: operations["reject_insurance_claim_pharmacy_insurance_claims__claim_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-claims/{claim_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Insurance Claim */
+        post: operations["approve_insurance_claim_pharmacy_insurance_claims__claim_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pharmacy/insurance-claims/{claim_id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pay Insurance Claim */
+        post: operations["pay_insurance_claim_pharmacy_insurance_claims__claim_id__pay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3427,6 +3582,98 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InsuranceClaimCreate */
+        InsuranceClaimCreate: {
+            /** Dispensation Order Id */
+            dispensation_order_id: number;
+            /** Insurance Provider Id */
+            insurance_provider_id: number;
+            /** Amount Total */
+            amount_total: number | string;
+            /** Amount Patient Copay */
+            amount_patient_copay: number | string;
+            /** Amount Claimed Insurer */
+            amount_claimed_insurer: number | string;
+        };
+        /** InsuranceClaimPay */
+        InsuranceClaimPay: {
+            /** Amount Paid */
+            amount_paid?: number | string | null;
+        };
+        /** InsuranceClaimRead */
+        InsuranceClaimRead: {
+            /** Id */
+            id: number;
+            /** Dispensation Order Id */
+            dispensation_order_id: number;
+            /** Insurance Provider Id */
+            insurance_provider_id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Claim Number */
+            claim_number: string;
+            /** Amount Total */
+            amount_total: string;
+            /** Amount Patient Copay */
+            amount_patient_copay: string;
+            /** Amount Claimed Insurer */
+            amount_claimed_insurer: string;
+            status: components["schemas"]["InsuranceClaimStatusEnum"];
+            /** Billing Mode */
+            billing_mode: string | null;
+            /** Invoice Id */
+            invoice_id: number | null;
+            /** Payment Id */
+            payment_id: number | null;
+            /** Rejection Reason */
+            rejection_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Submitted At */
+            submitted_at: string | null;
+            /** Approved At */
+            approved_at: string | null;
+            /** Paid At */
+            paid_at: string | null;
+            /** Rejected At */
+            rejected_at: string | null;
+        };
+        /** InsuranceClaimReject */
+        InsuranceClaimReject: {
+            /** Rejection Reason */
+            rejection_reason: string;
+        };
+        /**
+         * InsuranceClaimStatusEnum
+         * @enum {string}
+         */
+        InsuranceClaimStatusEnum: "pending" | "submitted" | "approved" | "paid" | "rejected";
+        /** InsuranceProviderCreate */
+        InsuranceProviderCreate: {
+            /** Contact Id */
+            contact_id: number;
+            /** Default Coverage Percentage */
+            default_coverage_percentage?: number | string | null;
+        };
+        /** InsuranceProviderRead */
+        InsuranceProviderRead: {
+            /** Id */
+            id: number;
+            /** Contact Id */
+            contact_id: number;
+            /** Default Coverage Percentage */
+            default_coverage_percentage: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** InteractionCheckRequest */
         InteractionCheckRequest: {
             /** Product Ids */
@@ -3964,6 +4211,37 @@ export interface components {
             title?: string | null;
             /** Content */
             content?: string | null;
+        };
+        /** PatientInsurancePolicyCreate */
+        PatientInsurancePolicyCreate: {
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Insurance Provider Id */
+            insurance_provider_id: number;
+            /** Policy Number */
+            policy_number: string;
+            /** Coverage Percentage */
+            coverage_percentage: number | string;
+        };
+        /** PatientInsurancePolicyRead */
+        PatientInsurancePolicyRead: {
+            /** Id */
+            id: number;
+            /** Patient Contact Id */
+            patient_contact_id: number;
+            /** Insurance Provider Id */
+            insurance_provider_id: number;
+            /** Policy Number */
+            policy_number: string;
+            /** Coverage Percentage */
+            coverage_percentage: string;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** PatientMessageCreate */
         PatientMessageCreate: {
@@ -10601,6 +10879,379 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InteractionCheckResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_insurance_providers_pharmacy_insurance_providers_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceProviderRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_insurance_provider_pharmacy_insurance_providers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsuranceProviderCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceProviderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_patient_insurance_policy_pharmacy_insurance_policies_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatientInsurancePolicyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientInsurancePolicyRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_patient_insurance_policies_pharmacy_insurance_policies_patient__patient_contact_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                patient_contact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientInsurancePolicyRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_insurance_claims_pharmacy_insurance_claims_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceClaimRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_insurance_claim_pharmacy_insurance_claims_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsuranceClaimCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceClaimRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_insurance_claim_pharmacy_insurance_claims__claim_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceClaimRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_insurance_claim_pharmacy_insurance_claims__claim_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceClaimRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_insurance_claim_pharmacy_insurance_claims__claim_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsuranceClaimReject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceClaimRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_insurance_claim_pharmacy_insurance_claims__claim_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceClaimRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pay_insurance_claim_pharmacy_insurance_claims__claim_id__pay_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsuranceClaimPay"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsuranceClaimRead"];
                 };
             };
             /** @description Validation Error */

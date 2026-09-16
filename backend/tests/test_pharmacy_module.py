@@ -27,9 +27,42 @@ from app.pharmacy.services import (
     ControlledSubstanceService,
     DispensationService,
     DrugInteractionService,
+    InsuranceClaimService,
+    InsuranceProviderService,
+    MtmSessionService,
+    PatientInsurancePolicyService,
     ProductActiveIngredientService,
+    ReorderPointService,
+    ReorderSuggestionService,
 )
-from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from app.shared.exceptions import ConflictError, NotFoundError, PackageNotLicensedError, ValidationError
+from app.accounting import models as accounting_models
+from app.accounting.services import InvoiceService
+
+
+async def _setup_sales_invoice_account_mappings(db, company):
+    """Mismo patrón que tests/test_medical_module.py, tests/test_reports_module.py
+    y tests/test_ecommerce_module.py — no existe seed automático de plan de
+    cuentas (spec DED-10), se crea explícitamente antes de contabilizar.
+    Incluye también el mapeo de `payment_received` (cash_bank/receivable)
+    porque los tests de este módulo ejercen el pago, no solo la factura."""
+    accounts = {}
+    for role, name in [("receivable", "Cuentas por Cobrar"), ("income", "Ingresos"), ("tax", "Impuestos por Pagar"), ("cash_bank", "Banco")]:
+        account = accounting_models.Account(
+            company_id=company.id, code=f"TEST-{role}", name=name, account_type=role,
+        )
+        db.add(account)
+        await db.flush()
+        accounts[role] = account
+        db.add(accounting_models.DocumentAccountMapping(
+            company_id=company.id, document_type="sales_invoice", role=role, account_id=account.id,
+        ))
+    for role in ("cash_bank", "receivable"):
+        db.add(accounting_models.DocumentAccountMapping(
+            company_id=company.id, document_type="payment_received", role=role, account_id=accounts[role].id,
+        ))
+    await db.commit()
+    return accounts
 
 
 @pytest_asyncio.fixture
@@ -81,6 +114,16 @@ async def pharmacist(db, company):
     return await UserService.create_user(
         db, company_id=company.id,
         payload=core_schemas.UserCreate(email=f"pharm.{unique}@test.hn", full_name="Farmacéutico Test", password="SuperSegura123"),
+        created_by=None,
+    )
+
+
+@pytest_asyncio.fixture
+async def vendor(db, company):
+    unique = uuid.uuid4().hex[:6]
+    return await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(name=f"Droguería Test {unique}", is_vendor=True),
         created_by=None,
     )
 
@@ -308,6 +351,325 @@ async def test_rls_blocks_cross_tenant_dispensation_read():
         await db_b.rollback()
 
 
+# ---------------------------------------------------------------------------
+# Módulo 21 — MTM / Consulta Farmacéutica
+# ---------------------------------------------------------------------------
+async def _activate_packages(db, company, *packages, status=None):
+    """Mismo helper que `tests/test_medical_module.py::_activate_packages`."""
+    status = status or core_models.PackageStatusEnum.active
+    for pkg in packages:
+        db.add(core_models.CompanyPackage(company_id=company.id, package=pkg, status=status))
+    await db.commit()
+
+
+def _mtm_payload(patient_contact, *, fee_amount=Decimal("300.00")):
+    return pharmacy_schemas.MtmSessionCreate(
+        patient_contact_id=patient_contact.id, session_date=date.today(),
+        medication_review="Paciente en tratamiento con 4 medicamentos crónicos, sin duplicidades detectadas.",
+        adherence_notes="Refiere olvidar la dosis nocturna con frecuencia.",
+        adverse_effects_notes=None, recommendations="Usar pastillero semanal.",
+        fee_amount=fee_amount,
+    )
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_create_starts_open(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    assert session.status == "open"
+    assert session.closed_at is None
+    assert session.fee_amount == Decimal("300.00")
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_create_rejects_unknown_patient(db, company, pharmacist):
+    payload = pharmacy_schemas.MtmSessionCreate(
+        patient_contact_id=999999, session_date=date.today(),
+        medication_review="Revisión de rutina.", fee_amount=Decimal("100.00"),
+    )
+    with pytest.raises(NotFoundError):
+        await MtmSessionService.create(db, company_id=company.id, payload=payload, pharmacist_user_id=pharmacist.id)
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_cancel_before_close(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    cancelled = await MtmSessionService.cancel(
+        db, company_id=company.id, session_id=session.id,
+        payload=pharmacy_schemas.MtmSessionCancel(cancel_reason="Paciente no se presentó"), actor_id=pharmacist.id,
+    )
+    assert cancelled.status == "cancelled"
+    assert cancelled.cancel_reason == "Paciente no se presentó"
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_cancel_twice_conflicts(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    await MtmSessionService.cancel(
+        db, company_id=company.id, session_id=session.id,
+        payload=pharmacy_schemas.MtmSessionCancel(cancel_reason="No asistió"), actor_id=pharmacist.id,
+    )
+    with pytest.raises(ConflictError):
+        await MtmSessionService.cancel(
+            db, company_id=company.id, session_id=session.id,
+            payload=pharmacy_schemas.MtmSessionCancel(cancel_reason="Otra vez"), actor_id=pharmacist.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_close_without_administrative_issues_simple_receipt(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    billing = await MtmSessionService.close(
+        db, company_id=company.id, session_id=session.id,
+        payload=pharmacy_schemas.MtmSessionClose(issue_date=date.today()), actor_id=pharmacist.id,
+    )
+    assert billing.billing_mode == "simple_receipt"
+    assert billing.receipt_number is not None
+    assert billing.invoice_id is None
+    assert billing.amount == Decimal("300.00")
+
+    refreshed = await MtmSessionService.get(db, company_id=company.id, session_id=session.id)
+    assert refreshed.status == "closed"
+    assert refreshed.closed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_close_with_administrative_posts_real_invoice(db, company, patient_contact, pharmacist):
+    await _activate_packages(db, company, "administrative")
+    # Mismo bug real ya encontrado y corregido en test_ecommerce_module.py/
+    # test_reports_module.py (sesión de verificación externa, sep-2026):
+    # sin este mapeo, InvoiceService.post -> JournalService.post_entry
+    # falla con ValidationError("No hay cuenta configurada..."), no
+    # relacionado con MTM en sí — cualquier flujo que contabilice una
+    # factura real necesita este setup primero.
+    await _setup_sales_invoice_account_mappings(db, company)
+
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    billing = await MtmSessionService.close(
+        db, company_id=company.id, session_id=session.id,
+        payload=pharmacy_schemas.MtmSessionClose(issue_date=date.today()), actor_id=pharmacist.id,
+    )
+    assert billing.billing_mode == "accounting_invoice"
+    assert billing.invoice_id is not None
+    assert billing.receipt_number is None
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_close_twice_conflicts(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    await MtmSessionService.close(
+        db, company_id=company.id, session_id=session.id,
+        payload=pharmacy_schemas.MtmSessionClose(issue_date=date.today()), actor_id=pharmacist.id,
+    )
+    with pytest.raises(ConflictError):
+        await MtmSessionService.close(
+            db, company_id=company.id, session_id=session.id,
+            payload=pharmacy_schemas.MtmSessionClose(issue_date=date.today()), actor_id=pharmacist.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_mtm_session_cancel_after_close_conflicts(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    await MtmSessionService.close(
+        db, company_id=company.id, session_id=session.id,
+        payload=pharmacy_schemas.MtmSessionClose(issue_date=date.today()), actor_id=pharmacist.id,
+    )
+    with pytest.raises(ConflictError):
+        await MtmSessionService.cancel(
+            db, company_id=company.id, session_id=session.id,
+            payload=pharmacy_schemas.MtmSessionCancel(cancel_reason="Tarde"), actor_id=pharmacist.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_mtm_billing_cancel_voids_receipt_without_reverting_session(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    billing = await MtmSessionService.close(
+        db, company_id=company.id, session_id=session.id,
+        payload=pharmacy_schemas.MtmSessionClose(issue_date=date.today()), actor_id=pharmacist.id,
+    )
+    cancelled_billing = await MtmSessionService.cancel_billing(
+        db, company_id=company.id, billing_record_id=billing.id,
+        payload=pharmacy_schemas.MtmSessionCancel(cancel_reason="Error de monto"), actor_id=pharmacist.id,
+    )
+    assert cancelled_billing.status == "cancelled"
+
+    refreshed_session = await MtmSessionService.get(db, company_id=company.id, session_id=session.id)
+    assert refreshed_session.status == "closed", "Anular el comprobante no revierte el estado de la sesión"
+
+
+@pytest.mark.asyncio
+async def test_get_billing_for_session_none_before_close(db, company, patient_contact, pharmacist):
+    session = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact), pharmacist_user_id=pharmacist.id
+    )
+    billing = await MtmSessionService.get_billing_for_session(db, company_id=company.id, session_id=session.id)
+    assert billing is None
+
+
+@pytest.mark.asyncio
+async def test_list_mtm_sessions_for_patient(db, company, patient_contact, pharmacist):
+    s1 = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact, fee_amount=Decimal("150.00")), pharmacist_user_id=pharmacist.id
+    )
+    s2 = await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(patient_contact, fee_amount=Decimal("200.00")), pharmacist_user_id=pharmacist.id
+    )
+    other_patient = await ContactService.create_contact(
+        db, company_id=company.id, payload=contacts_schemas.ContactCreate(name="Otro Cliente", is_customer=True), created_by=None,
+    )
+    await MtmSessionService.create(
+        db, company_id=company.id, payload=_mtm_payload(other_patient), pharmacist_user_id=pharmacist.id
+    )
+
+    sessions = await MtmSessionService.list_for_patient(db, company_id=company.id, patient_contact_id=patient_contact.id)
+    ids = {s.id for s in sessions}
+    assert ids == {s1.id, s2.id}
+
+
+# ---------------------------------------------------------------------------
+# Módulo 20 — Reposición a Droguerías
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_reorder_point_upsert_creates_then_updates_same_row(db, company, product, warehouse):
+    first = await ReorderPointService.upsert(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.ReorderPointUpsert(product_id=product.id, warehouse_id=warehouse.id, reorder_point=Decimal("10"), reorder_quantity=Decimal("50")),
+        actor_id=None,
+    )
+    second = await ReorderPointService.upsert(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.ReorderPointUpsert(product_id=product.id, warehouse_id=warehouse.id, reorder_point=Decimal("20"), reorder_quantity=Decimal("100")),
+        actor_id=None,
+    )
+    assert second.id == first.id, "Debe actualizar la misma fila (unique product+warehouse), no duplicar"
+    assert second.reorder_point == Decimal("20")
+    assert second.reorder_quantity == Decimal("100")
+
+
+@pytest.mark.asyncio
+async def test_reorder_point_upsert_validates_preferred_vendor_is_vendor(db, company, product, warehouse, patient_contact):
+    with pytest.raises(ValidationError):
+        await ReorderPointService.upsert(
+            db, company_id=company.id,
+            payload=pharmacy_schemas.ReorderPointUpsert(
+                product_id=product.id, warehouse_id=warehouse.id, reorder_point=Decimal("10"),
+                reorder_quantity=Decimal("50"), preferred_vendor_id=patient_contact.id,
+            ),
+            actor_id=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_reorder_suggestion_appears_when_stock_at_or_below_point(db, company, product, warehouse):
+    await _seed_lot(db, company, product, warehouse, lot_number="L1", expiry_date=date.today() + timedelta(days=365), quantity=Decimal("5"))
+    await ReorderPointService.upsert(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.ReorderPointUpsert(product_id=product.id, warehouse_id=warehouse.id, reorder_point=Decimal("10"), reorder_quantity=Decimal("50")),
+        actor_id=None,
+    )
+
+    suggestions = await ReorderSuggestionService.list_suggestions(db, company_id=company.id, warehouse_id=warehouse.id)
+    assert len(suggestions) == 1
+    assert suggestions[0].product_id == product.id
+    assert suggestions[0].available_quantity == Decimal("5")
+    assert suggestions[0].below_by == Decimal("5")
+
+
+@pytest.mark.asyncio
+async def test_reorder_suggestion_absent_when_stock_above_point(db, company, product, warehouse):
+    await _seed_lot(db, company, product, warehouse, lot_number="L1", expiry_date=date.today() + timedelta(days=365), quantity=Decimal("100"))
+    await ReorderPointService.upsert(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.ReorderPointUpsert(product_id=product.id, warehouse_id=warehouse.id, reorder_point=Decimal("10"), reorder_quantity=Decimal("50")),
+        actor_id=None,
+    )
+
+    suggestions = await ReorderSuggestionService.list_suggestions(db, company_id=company.id, warehouse_id=warehouse.id)
+    assert suggestions == []
+
+
+@pytest.mark.asyncio
+async def test_reorder_suggestion_without_any_stock_row_counts_as_zero(db, company, product, warehouse):
+    """Producto con punto de pedido configurado pero SIN ningún
+    StockMovement todavía (nunca se compró) — debe aparecer como
+    sugerencia con 0 disponible, no fallar ni quedar fuera del cálculo."""
+    await ReorderPointService.upsert(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.ReorderPointUpsert(product_id=product.id, warehouse_id=warehouse.id, reorder_point=Decimal("10"), reorder_quantity=Decimal("50")),
+        actor_id=None,
+    )
+    suggestions = await ReorderSuggestionService.list_suggestions(db, company_id=company.id, warehouse_id=warehouse.id)
+    assert len(suggestions) == 1
+    assert suggestions[0].available_quantity == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_generate_purchase_order_requires_administrative(db, company, product, warehouse, vendor):
+    with pytest.raises(PackageNotLicensedError):
+        await ReorderSuggestionService.generate_purchase_order(
+            db, company_id=company.id,
+            payload=pharmacy_schemas.ReorderPurchaseOrderGenerate(
+                warehouse_id=warehouse.id, vendor_id=vendor.id,
+                lines=[pharmacy_schemas.ReorderPurchaseOrderLineInput(product_id=product.id, quantity=Decimal("50"), unit_cost=Decimal("3.50"))],
+            ),
+            actor_id=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_purchase_order_with_administrative_creates_real_po(db, company, product, warehouse, vendor):
+    await _activate_packages(db, company, "administrative")
+
+    po = await ReorderSuggestionService.generate_purchase_order(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.ReorderPurchaseOrderGenerate(
+            warehouse_id=warehouse.id, vendor_id=vendor.id,
+            lines=[pharmacy_schemas.ReorderPurchaseOrderLineInput(product_id=product.id, quantity=Decimal("50"), unit_cost=Decimal("3.50"))],
+        ),
+        actor_id=None,
+    )
+    assert po.status == "draft"
+    assert po.vendor_id == vendor.id
+    assert len(po.lines) == 1
+    assert po.lines[0].quantity_ordered == Decimal("50")
+
+
+@pytest.mark.asyncio
+async def test_reorder_point_delete_removes_it_from_suggestions(db, company, product, warehouse):
+    point = await ReorderPointService.upsert(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.ReorderPointUpsert(product_id=product.id, warehouse_id=warehouse.id, reorder_point=Decimal("10"), reorder_quantity=Decimal("50")),
+        actor_id=None,
+    )
+    await ReorderPointService.delete(db, company_id=company.id, reorder_point_id=point.id)
+
+    suggestions = await ReorderSuggestionService.list_suggestions(db, company_id=company.id, warehouse_id=warehouse.id)
+    assert suggestions == []
+
+
+@pytest.mark.asyncio
+async def test_reorder_point_delete_unknown_raises_not_found(db, company):
+    with pytest.raises(NotFoundError):
+        await ReorderPointService.delete(db, company_id=company.id, reorder_point_id=999999)
+
+
 # ---------------------------------------------------------------------------------
 # Módulo 17 — Interacciones [extendido]. Ver DED-58 a DED-61 en models.py.
 # ---------------------------------------------------------------------------------------------
@@ -429,3 +791,182 @@ async def test_active_ingredient_set_is_idempotent_upsert(db, company, product):
     rows = await ProductActiveIngredientService.list(db, company_id=company.id)
     assert len(rows) == 1
     assert updated.active_ingredient == "ibuprofen"
+
+
+# ---------------------------------------------------------------------------------------------
+# Módulo 18 — Aseguradoras [extendido]. Ver DED-62 a DED-64 en models.py.
+# ---------------------------------------------------------------------------------------------
+@pytest_asyncio.fixture
+async def insurer_contact(db, company):
+    return await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(name="Aseguradora Test", is_customer=True),
+        created_by=None,
+    )
+
+
+@pytest_asyncio.fixture
+async def insurance_provider(db, company, insurer_contact):
+    return await InsuranceProviderService.create(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InsuranceProviderCreate(contact_id=insurer_contact.id, default_coverage_percentage=Decimal("80")),
+    )
+
+
+async def _dispensed_order(db, company, patient_contact, product, warehouse, pharmacist):
+    await _seed_lot(db, company, product, warehouse, lot_number="LOT-INS", expiry_date=date.today() + timedelta(days=30), quantity=Decimal(10))
+    return await DispensationService.create(
+        db, company_id=company.id, dispensed_by=pharmacist.id,
+        payload=_dispense_payload(
+            patient_contact, product, Decimal(1), warehouse_id=warehouse.id,
+            allergy_check_notes="Sin alergias conocidas",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_insurance_provider_requires_is_customer_contact(db, company):
+    non_customer = await ContactService.create_contact(
+        db, company_id=company.id, payload=contacts_schemas.ContactCreate(name="No Cliente", is_vendor=True), created_by=None,
+    )
+    with pytest.raises(ValidationError):
+        await InsuranceProviderService.create(
+            db, company_id=company.id,
+            payload=pharmacy_schemas.InsuranceProviderCreate(contact_id=non_customer.id),
+        )
+
+
+@pytest.mark.asyncio
+async def test_claim_full_lifecycle_claim_only_when_administrative_inactive(
+    db, company, patient_contact, product, warehouse, pharmacist, insurance_provider,
+):
+    order = await _dispensed_order(db, company, patient_contact, product, warehouse, pharmacist)
+
+    claim = await InsuranceClaimService.create(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InsuranceClaimCreate(
+            dispensation_order_id=order.id, insurance_provider_id=insurance_provider.id,
+            amount_total=Decimal("100.00"), amount_patient_copay=Decimal("20.00"), amount_claimed_insurer=Decimal("80.00"),
+        ),
+    )
+    assert claim.status == "pending"
+
+    claim = await InsuranceClaimService.submit(db, company_id=company.id, claim_id=claim.id)
+    assert claim.status == "submitted"
+
+    claim = await InsuranceClaimService.approve(db, company_id=company.id, claim_id=claim.id, actor_id=None)
+    assert claim.status == "approved"
+    assert claim.billing_mode == "claim_only"
+    assert claim.invoice_id is None
+
+    claim = await InsuranceClaimService.pay(
+        db, company_id=company.id, claim_id=claim.id, payload=pharmacy_schemas.InsuranceClaimPay(), actor_id=None,
+    )
+    assert claim.status == "paid"
+    assert claim.payment_id is None
+
+
+@pytest.mark.asyncio
+async def test_claim_creates_real_invoice_and_payment_when_administrative_active(
+    db, company, patient_contact, product, warehouse, pharmacist, insurance_provider,
+):
+    db.add(core_models.CompanyPackage(company_id=company.id, package="administrative", status="active"))
+    await db.commit()
+
+    order = await _dispensed_order(db, company, patient_contact, product, warehouse, pharmacist)
+    await _setup_sales_invoice_account_mappings(db, company)
+
+    claim = await InsuranceClaimService.create(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InsuranceClaimCreate(
+            dispensation_order_id=order.id, insurance_provider_id=insurance_provider.id,
+            amount_total=Decimal("100.00"), amount_patient_copay=Decimal("20.00"), amount_claimed_insurer=Decimal("80.00"),
+        ),
+    )
+    claim = await InsuranceClaimService.submit(db, company_id=company.id, claim_id=claim.id)
+    claim = await InsuranceClaimService.approve(db, company_id=company.id, claim_id=claim.id, actor_id=None)
+
+    assert claim.billing_mode == "accounting_invoice"
+    assert claim.invoice_id is not None
+
+    invoice = await InvoiceService.get(db, company_id=company.id, invoice_id=claim.invoice_id)
+    assert invoice.status == "posted"
+    assert invoice.total == Decimal("80.00")
+    assert invoice.contact_id == insurance_provider.contact_id
+
+    claim = await InsuranceClaimService.pay(
+        db, company_id=company.id, claim_id=claim.id, payload=pharmacy_schemas.InsuranceClaimPay(), actor_id=None,
+    )
+    assert claim.status == "paid"
+    assert claim.payment_id is not None
+
+    invoice = await InvoiceService.get(db, company_id=company.id, invoice_id=claim.invoice_id)
+    assert invoice.status == "paid"
+    assert invoice.balance_due == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_claim_amounts_must_sum_to_total(db, company, patient_contact, product, warehouse, pharmacist, insurance_provider):
+    order = await _dispensed_order(db, company, patient_contact, product, warehouse, pharmacist)
+    with pytest.raises(ValueError):
+        pharmacy_schemas.InsuranceClaimCreate(
+            dispensation_order_id=order.id, insurance_provider_id=insurance_provider.id,
+            amount_total=Decimal("100.00"), amount_patient_copay=Decimal("20.00"), amount_claimed_insurer=Decimal("70.00"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_claim_reject_only_before_approval(
+    db, company, patient_contact, product, warehouse, pharmacist, insurance_provider,
+):
+    order = await _dispensed_order(db, company, patient_contact, product, warehouse, pharmacist)
+    claim = await InsuranceClaimService.create(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.InsuranceClaimCreate(
+            dispensation_order_id=order.id, insurance_provider_id=insurance_provider.id,
+            amount_total=Decimal("50.00"), amount_patient_copay=Decimal("50.00"), amount_claimed_insurer=Decimal("0.00"),
+        ),
+    )
+    claim = await InsuranceClaimService.reject(
+        db, company_id=company.id, claim_id=claim.id, payload=pharmacy_schemas.InsuranceClaimReject(rejection_reason="Póliza vencida"),
+    )
+    assert claim.status == "rejected"
+    assert claim.rejection_reason == "Póliza vencida"
+
+    with pytest.raises(ConflictError):
+        await InsuranceClaimService.submit(db, company_id=company.id, claim_id=claim.id)
+
+
+@pytest.mark.asyncio
+async def test_claim_cannot_be_created_for_voided_dispensation(
+    db, company, patient_contact, product, warehouse, pharmacist, insurance_provider,
+):
+    order = await _dispensed_order(db, company, patient_contact, product, warehouse, pharmacist)
+    await DispensationService.void(
+        db, company_id=company.id, order_id=order.id, actor_id=None,
+        payload=pharmacy_schemas.DispensationVoid(void_reason="Error de captura"),
+    )
+
+    with pytest.raises(ValidationError):
+        await InsuranceClaimService.create(
+            db, company_id=company.id,
+            payload=pharmacy_schemas.InsuranceClaimCreate(
+                dispensation_order_id=order.id, insurance_provider_id=insurance_provider.id,
+                amount_total=Decimal("50.00"), amount_patient_copay=Decimal("50.00"), amount_claimed_insurer=Decimal("0.00"),
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_patient_insurance_policy_create_and_list(db, company, patient_contact, insurance_provider):
+    policy = await PatientInsurancePolicyService.create(
+        db, company_id=company.id,
+        payload=pharmacy_schemas.PatientInsurancePolicyCreate(
+            patient_contact_id=patient_contact.id, insurance_provider_id=insurance_provider.id,
+            policy_number="POL-001", coverage_percentage=Decimal("80"),
+        ),
+    )
+    assert policy.policy_number == "POL-001"
+
+    policies = await PatientInsurancePolicyService.list_for_patient(db, company_id=company.id, patient_contact_id=patient_contact.id)
+    assert len(policies) == 1

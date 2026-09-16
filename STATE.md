@@ -48,7 +48,7 @@ es transparente a nivel de API).
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
 - Médico: medical (✓ Completo — Fases 1-4 completas: backend, contrato, frontend, tests de integración reales), recetas (✓ Completo), laboratorio (✓ Completo), teleconsulta (✓ Completo), facturación médica básica (✓ Completo), portal/mensajería (✓ Completo), reserva pública de citas (✓ Completo — backend + widget embebible, verificado contra Postgres real, ver su sección)
-- Farmacéutico: dispensación + verificación clínica (✓ Completo — módulo 16), sustancias controladas (✓ Completo — módulo 16), interacciones medicamentosas (✓ Completo — módulo 17, verificado contra Postgres real, sesión sep-2026), reposición a droguerías (—), aseguradoras/copagos (—), POS farmacia (✓ Completo — módulo 16), MTM (—)
+- Farmacéutico: **completo de punta a punta** — dispensación + verificación clínica (✓ Completo — módulo 16), sustancias controladas (✓ Completo — módulo 16), interacciones medicamentosas (✓ Completo — módulo 17), reposición a droguerías (✓ Completo — módulo 20), aseguradoras/copagos (✓ Completo — módulo 18), POS farmacia (✓ Completo — módulo 16), MTM (✓ Completo — módulo 21) — 18/20/21 verificados contra Postgres real, sesión sep-2026
 - Web: website (✓ Completo — verificado vía CI), ecommerce (✓ Completo — backend + configuración de panel interno verificados vía CI; storefront público es un frontend separado fuera de alcance de este panel)
 - Transversal: reports (✓ Completo — verificado vía CI), audit completo (✓ Completo — módulo 25, verificado contra Postgres real, sesión sep-2026), notifications (✓ Completo — Fases 1-4 completas)
 
@@ -1291,7 +1291,115 @@ spec 7.1) — **Fases 1-4 completas**
   ambos enfoques conviven en el proyecto; no hay codegen automático real
   todavía (ver nota en la sección `website` sobre ese TODO).
 
+### `pharmacy` — aseguradoras / copagos (módulo 18) — ✓ COMPLETO, VERIFICADO contra Postgres real
 
+> Recibido junto con el módulo 17 en el mismo ZIP (`erp-crm-modular-main.zip`,
+> sin sufijo de número — ramificado justo después de `67040fb9b867`).
+> Mismo patrón de merge que los anteriores: archivos exclusivos copiados
+> sin conflicto, migración `a3f8c1d9e0b2` ya encadenada correctamente
+> tras el módulo 17 sin necesidad de reencadenar. Ya traía los `GRANT`
+> de tabla y secuencia correctos desde el principio, con comentario
+> propio citando `1d9a25acd918` — igual que el módulo 17, este autor ya
+> conocía el bug sistémico. Verificado junto con los módulos 20/21 en la
+> misma corrida (ver su nota de cierre conjunto más abajo, en
+> `LOG_EJECUCION.md`, y el resumen en el README).
+
+- **3 tablas nuevas**: `insurance_providers` (aseguradoras con las que
+  trabaja la farmacia), `patient_insurance_policies` (póliza de un
+  paciente con una aseguradora, número de póliza, % de copago),
+  `insurance_claims` (ciclo de vida completo: `submitted` → `approved`/
+  `rejected` → `paid`, con su propia factura y pago reales vía
+  `InvoiceService`/`PaymentService` al aprobarse — no un monto simulado).
+- **Endpoints**: administración de aseguradoras y pólizas, más el ciclo
+  de vida del reclamo (`submit`/`approve`/`reject`/`pay`). 2 permisos
+  nuevos (`pharmacy:insurance:manage`, `pharmacy:insurance:claim`).
+
+### `pharmacy` — MTM / consulta farmacéutica (módulo 21) — ✓ COMPLETO, VERIFICADO contra Postgres real
+
+> Recibido junto con el módulo 20 en el mismo ZIP
+> (`erp-crm-modular-main-modulo20.zip`), ramificado directo del estado
+> ya verificado de los módulos 15/25 (`f3b6a1d9c204`), sin conocer
+> todavía los módulos 17/18 (que para entonces ya estaban en `main`).
+> Reencadenado de `down_revision=f3b6a1d9c204` a `down_revision=a3f8c1d9e0b2`
+> (tip real de la cadena de farmacia a esa altura: 17→18) para mantener
+> una sola cadena lineal — documentado en la propia migración
+> (`b7e2f5a13c68`).
+>
+> **A diferencia de los módulos 17 y 18, esta migración SÍ tuvo el bug
+> sistémico de `1d9a25acd918`** (sin `GRANT` sobre `pharmacy_mtm_sessions`/
+> `pharmacy_mtm_billing_records` ni sus secuencias) — corregido antes de
+> correr contra Postgres real por primera vez, así que nunca llegó a
+> fallar en un pytest real. También se encontró un bug real en el propio
+> test de cierre (`test_mtm_session_close_with_administrative_posts_real_invoice`):
+> no configuraba `DocumentAccountMapping` antes de que `close()` (con
+> `administrative` activo) contabilizara una factura real — mismo patrón
+> ya visto en `test_ecommerce_module.py`/`test_reports_module.py`,
+> corregido con el mismo helper ya existente en este archivo.
+
+- **2 tablas nuevas**: `pharmacy_mtm_sessions` (sesión de consulta
+  farmacéutica: revisión de medicación, adherencia, efectos adversos,
+  recomendaciones, tarifa), `pharmacy_mtm_billing_records` (facturación
+  de la sesión — `accounting_invoice` si `administrative` está activo,
+  `simple_receipt` si no, mismo desacople clínico/financiero que
+  `consultations`/`medical_billing_records` de `medical`, DED-62).
+- **Endpoints**: crear/cerrar/cancelar sesión, ver facturación, cancelar
+  registro de facturación. 2 permisos nuevos
+  (`pharmacy:mtm_session:create`, `pharmacy:mtm_session:read`).
+
+### `pharmacy` — reposición a droguerías (módulo 20) — ✓ COMPLETO, VERIFICADO contra Postgres real
+
+> Mismo ZIP y mismo reencadene que el módulo 21 (de hecho
+> `c4d8b3f61a97` ya venía correctamente encadenado tras `b7e2f5a13c68`
+> en el ZIP original — solo hizo falta reencadenar el punto de partida
+> de todo el par, no cada uno por separado). **Mismo bug sistémico de
+> `GRANT` faltante que el módulo 21**, sobre `pharmacy_reorder_points` —
+> corregido igual, antes de la primera corrida real.
+>
+> **Bug real de merge, no del módulo**: al fusionar el parche de este
+> módulo contra el árbol que ya tenía los módulos 17/18/25 mezclados, el
+> merge automático (`patch --fuzz=5`) produjo dos artefactos que hubo
+> que corregir a mano — una función de `pharmacy/services.py`
+> (`ControlledSubstanceLogService.list`, del módulo 16 original) quedó
+> con su `return` cortado a mitad, generando un `SyntaxError` real al
+> compilar, y un bloque de 3 permisos de `audit` quedó duplicado en
+> `bootstrap_admin.py`, causando `UniqueViolationError` real al correr
+> `bootstrap_admin.py` contra Postgres. Ambos son ruido de la
+> herramienta de parcheo, no error de ningún autor de módulo — se
+> detectaron porque `pytest`/`bootstrap_admin.py` fallaron de verdad
+> contra Postgres real, no por inspección visual del diff.
+>
+> También apareció un bug real, genuino, en
+> `PharmacyPage.integration.test.tsx` (el test original de dispensación,
+> del módulo 16): dejó de pasar porque este módulo agrega un segundo
+> selector con `aria-label="Sucursal"` en la misma pantalla (para el
+> formulario de puntos de pedido), y el test buscaba por esa etiqueta
+> sin acotar la búsqueda a su propia sección. Corregido con `within()`,
+> scopeado a la sección "Dispensación / Venta de mostrador" por su
+> encabezado.
+>
+> Con los tres módulos (18/20/21) y sus fixes: `pytest tests/` en
+> **185/185**, 31 migraciones limpias de punta a punta,
+> `contracts/openapi.json` recongelado (162 rutas / 200 operaciones),
+> `npx vitest run` en **19/19 archivos, 30/30 tests**. Detalle completo
+> de la corrida en `LOG_EJECUCION.md`.
+
+- **1 tabla nueva**: `pharmacy_reorder_points` (punto de pedido y
+  cantidad de reposición por `(company_id, product_id, warehouse_id)`).
+- **Endpoints**: CRUD de puntos de pedido, listar sugerencias de
+  reposición (calculadas: stock disponible bajo el punto configurado),
+  y generar una orden de compra real en `purchasing` desde una
+  sugerencia — **requiere el paquete Administrativo completo** (spec
+  8.3: sin él, "la sugerencia queda como lista exportable sin flujo de
+  aprobación", DED-66). 2 permisos nuevos
+  (`pharmacy:reorder_point:manage`, `pharmacy:reorder_point:read`).
+- **TODO nuevo, no bloqueante**: igual que `audit`, ninguno de estos
+  tres módulos (18/20/21) trae su propio
+  `*.integration.test.tsx` de frontend — `PharmacyPage.integration.test.tsx`
+  solo cubre el flujo original de dispensación (módulo 16), ahora además
+  con el fix de scoping de arriba. Cobertura de frontend de
+  aseguradoras/MTM/reposición queda pendiente para un cierre futuro.
+
+### `audit` — paquete completo (módulo 25) — ✓ COMPLETO, VERIFICADO contra Postgres real
 
 > **Nota de verificación externa (sep-2026, sesión posterior a la
 > escritura del módulo)**: se instaló Postgres real ad-hoc y se corrió

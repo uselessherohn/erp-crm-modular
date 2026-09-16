@@ -31,13 +31,13 @@ describe("StockPage — flujo real de inventory contra backend en 127.0.0.1:8000
   let setupDone = false;
 
   beforeAll(async () => {
-    // Guarda de idempotencia: se observó empíricamente que beforeAll podía
-    // dispararse dos veces en una sola invocación de "vitest run" (dos
-    // POST /inventory/products reales con SKUs distintos, 7s aparte,
-    // confirmado revisando la tabla products directamente) — mecanismo
-    // interno de Vitest 4.x no identificado con certeza, no reproducible
-    // vía curl directo contra el backend. Esta guarda hace el setup seguro
-    // ante una posible doble invocación, sea cual sea la causa exacta.
+    // Guarda de idempotencia — no debería hacer falta si Vitest invoca
+    // beforeAll una sola vez, pero es barata y protege ante cualquier
+    // reintento. (Nota de cierre del módulo 18: el síntoma que originalmente
+    // motivó esta guarda — SKUs duplicados observados entre corridas — se
+    // explica en realidad por la ausencia de `waitFor` en una aserción más
+    // abajo, ver el test "refleja el saldo real..."; no una doble
+    // invocación real de este hook.)
     if (setupDone) return;
     setupDone = true;
 
@@ -78,14 +78,16 @@ describe("StockPage — flujo real de inventory contra backend en 127.0.0.1:8000
 
   it("refleja el saldo real tras una entrada de stock", async () => {
     renderStockPage();
-    // Las 3 aserciones dependen de la misma respuesta async (la tabla de
-    // niveles de stock) — solo la primera estaba envuelta en `waitFor`;
-    // las otras dos corrían de forma síncrona justo después, sin esperar
-    // a que React terminara de pintar el resto de la fila. Bug real de
-    // este test, reproducido en esta sesión de verificación externa
-    // (sep-2026): pasa o falla según qué tan rápido resuelva esa
-    // respuesta en cada corrida — no es flaky de la app, es una carrera
-    // real contra el propio render.
+    // Bug real de este test, reproducido de forma independiente en dos
+    // sesiones de verificación externa distintas (esta y el cierre del
+    // módulo 18): de las 3 aserciones, solo la primera estaba envuelta en
+    // `waitFor` — las otras dos (`warehouseName`, `"75.0000"`) dependen de
+    // `useWarehouses()`, una query independiente de la de productos, que
+    // puede resolver más tarde y hacer que se lea el fallback `#<id>` del
+    // componente en vez del nombre real. Más probable cuantos más
+    // almacenes se acumulan en la compañía a lo largo de una corrida
+    // completa de `vitest run` (la respuesta tarda más). Corregido
+    // envolviendo las tres en el mismo `waitFor`.
     await waitFor(() => {
       expect(screen.getByText(productName)).toBeInTheDocument();
       expect(screen.getByText(warehouseName)).toBeInTheDocument();
