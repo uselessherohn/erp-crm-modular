@@ -115,6 +115,19 @@ def upgrade() -> None:
     # -----------------------------------------------------------------
 
     # -----------------------------------------------------------------
+    # HALLAZGO REAL (regresión QA, primera corrida contra Postgres real):
+    # `app/medical/services.py` usa func.pgp_sym_encrypt/pgp_sym_decrypt
+    # (pgcrypto) para cifrar clinical_record_entries.content y los campos
+    # clínicos de consultations (DED-24/DED-25 en STATE.md), pero ninguna
+    # migración del repo habilitaba la extensión pgcrypto — mismo tipo de
+    # bug que el de pg_trgm en contacts (40b15e2afd9b), nunca detectado
+    # porque ninguna sesión de chat anterior tuvo Postgres real. Sin esto,
+    # cualquier INSERT/UPDATE sobre estas columnas habría fallado en
+    # cuanto se ejecutara por primera vez contra una base real.
+    # -----------------------------------------------------------------
+    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+
+    # -----------------------------------------------------------------
     # DED-26: bloqueo de horario real — un profesional no puede tener dos
     # citas activas (scheduled/confirmed) que se traslapen en el tiempo.
     # EXCLUDE USING gist requiere btree_gist para comparar el bigint de
