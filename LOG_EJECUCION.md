@@ -1745,3 +1745,87 @@ frontend específica de aseguradoras/MTM/reposición queda pendiente para un cie
 **Resultado**: Farmacéutico queda **completo de punta a punta** (sus 5 módulos construibles hoy: 16,
 17, 18, 20, 21 — 19 sigue cubierto dentro de 16 por DED-49). `README.md`/`STATE.md` actualizados: 25
 módulos completos de punta a punta (antes 22).
+
+---
+
+## Cierre de todos los pendientes documentados: cobertura de frontend + purge_audit.py (sep-2026)
+
+Se resolvieron los tres cabos sueltos que quedaban documentados tras el cierre de Farmacéutico:
+cobertura de frontend faltante en `audit` (módulo 25) y en `pharmacy` 18/20/21, y
+`scripts/purge_audit.py` nunca ejecutado de punta a punta. No se tocó el resto de la lista histórica
+de TODOs `[extendido]` del proyecto (nómina, FEFO/FIFO, motor de descuentos, etc.) — esos son
+decisiones de alcance de producto ya documentadas explícitamente como diferidas por diseño, no cabos
+sueltos de esta sesión de verificación.
+
+**`AuditPage.integration.test.tsx` (nuevo)**. Cubre dos flujos reales: (1) crear un contacto real por
+API dispara un evento de auditoría real (`contact.created`), y se confirma que aparece filtrado por
+`entity_type=contact` en la UI; (2) editar la política de retención desde la UI persiste de verdad
+(confirmado releyendo la API directo, y con un montaje nuevo del componente). Al escribir el primer
+intento del segundo caso se encontró un **bug real en `AuditPage.tsx`**: el campo "Días de retención"
+usaba `effectiveDays = days !== "" ? days : String(policy?.retention_days ?? "")` como valor del
+input — es decir, mientras el usuario lo tenía vacío, el campo mostraba el valor YA GUARDADO como
+fallback de renderizado. Al vaciar el campo con `user.clear()` para escribir un número nuevo, ese
+fallback volvía a poblar el input de inmediato (antes de que el usuario/test alcanzara a escribir
+nada), y escribir después CONCATENABA sobre ese valor visible (ej. con 90 días guardados, vaciar y
+escribir "51" dejaba "9051" en el campo, no "51" — se reprodujo exacto: `input: 9051`). Corregido:
+`days` ahora se inicializa una única vez, vía `useEffect`, con el valor real ya cargado como
+contenido editable genuino (no como fallback recalculado en cada render) — `clear()` + `type()`
+funciona como cabría esperar. Se ajustó el test para verificar el valor tipeado antes de guardar, y
+confirmar la persistencia con un montaje nuevo del componente en vez de mirar el mismo input recién
+editado.
+
+**`PharmacyPage.insurance-mtm-reorder.integration.test.tsx` (nuevo)**. Cubre las tres secciones sin
+test de frontend: MTM (crear sesión → cerrar y facturar), Aseguradoras (aseguradora → póliza →
+reclamo → enviar → aprobar → pagar, contra una dispensación real con stock real) y Reposición
+(configurar un punto de pedido y verlo en la lista — generar una PO real desde una sugerencia quedó
+fuera de alcance por tiempo, requiere además dejar el stock bajo el punto configurado, documentado
+como TODO explícito en el propio archivo). Tres ajustes reales encontrados al correr contra Postgres
+real, ninguno bug de la app:
+1. El paciente de prueba para MTM solo tenía `is_patient=true` — `MtmSessionService.close()` factura
+   al contacto cuando `administrative` está activo, y `InvoiceService` exige `is_customer=true` para
+   poder facturarle a alguien (regla de negocio real y correcta, ya vista en otros módulos).
+   Corregido agregando `is_customer: true` al contacto de prueba.
+2. Correr el archivo en aislamiento (no como parte de la suite completa) fallaba con
+   `ValidationError: No hay cuenta configurada para el rol 'receivable'...` — cerrar una sesión de
+   MTM y aprobar/pagar un reclamo de aseguradora contabilizan facturas y pagos reales, y "El Roble"
+   no trae mapeos contables seedeados. Corregido replicando el mismo patrón ya establecido en
+   `MedicalPage.integration.test.tsx` (crear cuentas + mapeos en el `beforeAll`, con try/catch por
+   409 para convivir con otros archivos de la suite que configuren lo mismo).
+3. El botón real para liquidar un reclamo se llama "Marcar pagado", no "Pagar" — el test asumía mal
+   el texto sin leer el componente primero; corregido tras revisar `PharmacyPage.tsx` directamente.
+4. (Bug en el propio test, no listado arriba por ser trivial): el contacto de prueba de
+   `AuditPage.integration.test.tsx` se creaba sin ningún rol activo — `ContactService` exige al menos
+   uno (cliente/proveedor/paciente/lead). Corregido agregando `is_lead: true`.
+5. Al correr ambos archivos nuevos juntos (y luego la suite completa), `AuditPage` volvió a fallar —
+   esta vez con "Found multiple elements", no "Unable to find": otros archivos de la suite (MTM,
+   Aseguradoras) también crean contactos reales contra la misma compañía compartida, así que
+   `getByText("contact.created")` dejó de ser único apenas se corría más de un archivo — mismo tipo
+   de bug ya visto y corregido en `AccountsPage`/`StockPage` en una sesión anterior. Corregido
+   buscando entre TODAS las filas con ese evento la que además referencia el `entity_id` del contacto
+   específico creado por este test (`getAllByText` + `.find()`, no `getByText`).
+
+**`scripts/purge_audit.py`, corrido de punta a punta contra Postgres real por primera vez.** Se
+sembraron 4 eventos de auditoría reales con `created_at` manipulado directo por SQL (2 vencidos no
+clínicos, 1 vencido clínico, 1 reciente), se fijó `retention_days=30` para "El Roble" vía la API real,
+y se confirmó que `GET /audit/retention-policy/purge-eligible` cuenta exactamente 2 elegibles
+(excluyendo el clínico). `--dry-run` reportó el mismo conteo exacto, sin modificar nada. El primer
+intento del borrado real con `--company-id 1` **falló con un bug real**:
+`psycopg.errors.AmbiguousColumn: column reference "company_id" is ambiguous` — el filtro SQL
+interpolado (`company_filter = "AND company_id = %(company_id)s"`) no calificaba la columna con el
+alias de tabla, y las 3 consultas donde se interpola hacen JOIN entre `audit a` y
+`audit_retention_policies p` (ambas tienen columna `company_id`). El script nunca había corrido antes
+contra Postgres real, así que este bug siempre estuvo ahí sin detectarse. Corregido calificando como
+`a.company_id` en las 3 consultas. Reintentado: el borrado real (confirmación interactiva `BORRAR`)
+eliminó exactamente las 2 filas vencidas no clínicas, dejó intactos el evento clínico y el reciente
+(confirmado con `SELECT` directo), y reactivó el trigger de inmutabilidad al terminar — confirmado
+con un `DELETE` manual posterior contra la fila reciente, que volvió a fallar con
+`audit es append-only: DELETE no permitido sobre la tabla audit`, el mismo error que antes de correr
+el script.
+
+**Verificación final, base recreada de cero**: `pytest tests/` sigue en **185/185** (sin módulos
+nuevos en este cierre, solo tests de frontend agregados y dos fixes de app/script), `alembic upgrade
+head` limpio (31 migraciones, sin cambios), `tsc -b` limpio, y `npx vitest run` sube a **21/21
+archivos, 35/35 tests** (antes 19/19, 30/30).
+
+**Resultado**: los tres pendientes documentados quedan cerrados. `README.md`/`STATE.md` actualizados
+con el detalle de cada bug real encontrado y corregido en el camino.

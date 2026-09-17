@@ -1392,12 +1392,14 @@ spec 7.1) — **Fases 1-4 completas**
   8.3: sin él, "la sugerencia queda como lista exportable sin flujo de
   aprobación", DED-66). 2 permisos nuevos
   (`pharmacy:reorder_point:manage`, `pharmacy:reorder_point:read`).
-- **TODO nuevo, no bloqueante**: igual que `audit`, ninguno de estos
-  tres módulos (18/20/21) trae su propio
-  `*.integration.test.tsx` de frontend — `PharmacyPage.integration.test.tsx`
-  solo cubre el flujo original de dispensación (módulo 16), ahora además
-  con el fix de scoping de arriba. Cobertura de frontend de
-  aseguradoras/MTM/reposición queda pendiente para un cierre futuro.
+- **TODO cerrado (sesión posterior, sep-2026)**: se escribió
+  `PharmacyPage.insurance-mtm-reorder.integration.test.tsx`, cubriendo
+  el ciclo completo de MTM (crear → cerrar y facturar), Aseguradoras
+  (aseguradora → póliza → reclamo → enviar → aprobar → pagar, contra
+  una dispensación real) y Reposición (configurar punto de pedido). Sin
+  bugs de la app — dos ajustes al propio test (el paciente de MTM
+  necesita `is_customer=true`, y hay que configurar los mapeos
+  contables antes de correr el archivo en aislamiento).
 
 ### `audit` — paquete completo (módulo 25) — ✓ COMPLETO, VERIFICADO contra Postgres real
 
@@ -1460,13 +1462,28 @@ spec 7.1) — **Fases 1-4 completas**
 > ejecutarse desde la capa HTTP de la API — el trigger de inmutabilidad
 > bloquea el DELETE incluso para `erp_app`, que no es dueño de la tabla
 > y no puede desactivar el trigger. `scripts/purge_audit.py` existe para
-> esto: corre fuera de la API, con credenciales elevadas (probablemente
-> el rol `postgres`/admin), y usa `AuditRetentionService` para calcular
-> qué filas son candidatas antes de un DELETE directo. **Nunca se
-> ejecutó de punta a punta contra Postgres real en esta sesión** —
-> requiere las credenciales de admin reales del entorno de despliegue,
-> no las de desarrollo local (`postgres_dev_pw`, ad-hoc de esta
-> verificación); queda como TODO explícito, no como brecha silenciosa.
+> esto: corre fuera de la API, con credenciales elevadas (el rol
+> `postgres`/admin dueño de la tabla), y usa la misma lógica de
+> `AuditRetentionService` para calcular qué filas son candidatas antes
+> de un DELETE directo.
+>
+> **Corrido de punta a punta contra Postgres real (sesión posterior,
+> sep-2026)**: se sembraron eventos de auditoría vencidos reales
+> (incluido uno `medical.*`, para confirmar la exclusión), se fijó una
+> política de retención agresiva vía la API, y se confirmó que
+> `--dry-run` reporta el mismo conteo que
+> `GET /audit/retention-policy/purge-eligible`. El borrado real (con
+> confirmación interactiva `BORRAR`) eliminó exactamente las filas
+> vencidas no-clínicas, dejó intacto el evento `medical.*` y cualquier
+> fila dentro de la ventana de retención, y reactivó el trigger de
+> inmutabilidad al terminar (confirmado con un `DELETE` manual posterior
+> contra esa misma fila, que volvió a fallar con el mismo error que
+> antes de correr el script). **Bug real encontrado y corregido**: con
+> `--company-id`, fallaba con `psycopg.errors.AmbiguousColumn` — el
+> filtro SQL interpolado (`company_filter`) usaba `company_id` sin
+> calificar en una consulta que hace JOIN entre `audit` y
+> `audit_retention_policies` (ambas tienen esa columna). Corregido
+> calificando como `a.company_id` en las 3 consultas donde se interpola.
 >
 > Eventos `medical.*` quedan protegidos de la política de retención
 > configurable sin importar cuántos días se configuren — ver
@@ -1474,13 +1491,18 @@ spec 7.1) — **Fases 1-4 completas**
 > la nota en `AuditRetentionPolicy.retention_days` (spec 8.1, explícito:
 > la retención regulatoria clínica nunca depende de esta configuración).
 >
-> **TODO nuevo, no bloqueante**: a diferencia del resto de módulos con
-> frontend, `AuditPage.tsx` no tiene su propio
-> `AuditPage.integration.test.tsx` — quedó sin cobertura de integración
-> de frontend en este cierre. No se escribió en esta sesión de
-> verificación (fuera de alcance: se pidió verificar y corregir lo ya
-> escrito, no ampliar cobertura nueva); queda pendiente para un cierre
-> futuro.
+> **TODO cerrado (sesión posterior, sep-2026)**: se escribió
+> `AuditPage.integration.test.tsx` — cubre un evento real (crear un
+> contacto) apareciendo filtrado por tipo de entidad en el registro, y
+> la edición de la política de retención. Al escribirlo se encontró un
+> **bug real en la propia app**: el campo "Días de retención" mostraba
+> el valor ya guardado como *fallback de renderizado* mientras el
+> usuario lo tenía vacío — al borrarlo para escribir un número nuevo, el
+> campo "revivía" el valor anterior de inmediato, y escribir después lo
+> concatenaba (ej. 90 guardado + escribir "51" → quedaba "9051", no
+> "51"). Corregido en `AuditPage.tsx`: `days` ahora se inicializa una
+> sola vez (vía `useEffect`) con contenido editable real, no con un
+> valor de respaldo que se recalcula en cada render.
 >
 > Columna `changes` (JSONB, nullable) en `audit`: agregada
 > retroactivamente. Los ~20 call-sites de `AuditService.log_event` que

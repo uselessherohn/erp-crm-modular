@@ -153,6 +153,47 @@ limpias de punta a punta, `contracts/openapi.json` recongelado (162
 rutas / 200 operaciones), y `npx vitest run` en **19/19 archivos, 30/30
 tests**.
 
+**Cierre de pendientes de verificación (sesión posterior)**: se
+resolvieron los tres cabos sueltos que quedaban documentados —
+cobertura de frontend faltante en `audit`/`18`/`20`/`21`, y
+`scripts/purge_audit.py` nunca ejecutado de punta a punta.
+
+- **`AuditPage.integration.test.tsx` (nuevo)**: cubre un evento real
+  (crear un contacto) apareciendo filtrado por tipo de entidad en el
+  registro, y la edición de la política de retención. Al escribirlo se
+  encontró un **bug real en la propia app**: el campo "Días de
+  retención" mostraba el valor ya guardado como *fallback de
+  renderizado* mientras estaba vacío — al borrarlo para escribir un
+  número nuevo, el campo "revivía" el valor anterior de inmediato, y
+  escribir después lo concatenaba (ej. 90 guardado + escribir "51" →
+  quedaba "9051", no "51"). Corregido en `AuditPage.tsx`: el campo se
+  inicializa una sola vez con contenido editable real, no con un
+  fallback que reaparece.
+- **`PharmacyPage.insurance-mtm-reorder.integration.test.tsx` (nuevo)**:
+  cubre el ciclo completo de MTM (crear sesión → cerrar y facturar), de
+  Aseguradoras (aseguradora → póliza → reclamo → enviar → aprobar →
+  pagar, contra una dispensación real) y de Reposición (configurar un
+  punto de pedido). Sin bugs de la app — dos ajustes reales al propio
+  test (el paciente de MTM necesita `is_customer=true` para poder
+  facturarle, no solo `is_patient`; y hay que configurar los mapeos
+  contables antes de correr el archivo en aislamiento, mismo patrón que
+  otros tests del proyecto).
+- **`scripts/purge_audit.py` corrido de punta a punta contra Postgres
+  real por primera vez**: se sembraron eventos de auditoría vencidos
+  reales, se confirmó que `--dry-run` reporta el mismo conteo que
+  `GET /audit/retention-policy/purge-eligible`, y que el borrado real
+  excluye correctamente eventos `medical.*` y reactiva el trigger de
+  inmutabilidad al final (confirmado con un `DELETE` manual posterior,
+  que vuelve a fallar como debe). **Bug real encontrado**: pasar
+  `--company-id` fallaba con `AmbiguousColumn` — el filtro SQL
+  interpolado no calificaba `company_id` con el alias de tabla,
+  ambiguo en un JOIN con `audit_retention_policies` (que también tiene
+  esa columna). Corregido calificando como `a.company_id`.
+
+Con todo esto: `pytest tests/` sigue en **185/185** (sin módulos
+nuevos, solo tests agregados), y `npx vitest run` sube a **21/21
+archivos, 35/35 tests**.
+
 **Corrección (sesión posterior, cierre del widget del módulo 15 y del
 módulo de Interacciones — ver más abajo)**: en esta misma sesión se
 había reportado que `AccountsPage.integration.test.tsx` fallaba por

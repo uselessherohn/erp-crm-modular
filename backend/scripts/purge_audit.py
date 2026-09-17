@@ -38,6 +38,20 @@ Por cada compañía (o una sola, si se pasa `--company-id`):
 5. Todo dentro de una transacción — si el paso 3 falla, el trigger
    nunca queda desactivado más tiempo del necesario.
 
+## Corrección real (sesión de verificación externa, sep-2026)
+
+Al ejecutarlo por primera vez contra Postgres real con `--company-id`,
+falló con `psycopg.errors.AmbiguousColumn: column reference
+"company_id" is ambiguous` — el filtro `company_filter` usaba
+`company_id` sin calificar, y las 3 consultas donde se interpola
+mezclan `audit a` con `audit_retention_policies p` (ambas tienen esa
+columna). Corregido calificando como `a.company_id` en las 3.
+Verificado real: `--dry-run` reporta el mismo conteo que
+`GET /audit/retention-policy/purge-eligible`, el borrado real excluye
+correctamente eventos `medical.*`, y el trigger de inmutabilidad queda
+reactivado al final (confirmado con un intento de `DELETE` manual
+posterior, que vuelve a fallar como debe).
+
 ## NO EJECUTADO — sin Postgres disponible en el entorno donde se escribió
 
 Igual que el resto de scripts nuevos de este proyecto en sesiones sin
@@ -75,7 +89,7 @@ def main() -> int:
 
     with psycopg.connect(args.db_url, connect_timeout=5) as conn:
         with conn.cursor() as cur:
-            company_filter = "AND company_id = %(company_id)s" if args.company_id is not None else ""
+            company_filter = "AND a.company_id = %(company_id)s" if args.company_id is not None else ""
             params = {"company_id": args.company_id} if args.company_id is not None else {}
 
             cur.execute(
