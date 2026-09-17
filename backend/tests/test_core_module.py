@@ -14,6 +14,7 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app import models_registry  # noqa: F401  (registra todos los modelos — user.active_warehouse_id -> warehouses; sin esto, correr este archivo AISLADO falla con NoReferencedTableError. Mismo patrón que ya usan test_medical_module.py/test_notifications_module.py/test_pharmacy_module.py — faltaba acá, irónicamente donde se define la FK problemática. Hallazgo real de la regresión QA externa, sep-2026.)
 from app.core import models, schemas, security
 from app.core.services import AuditService, AuthService, RoleService, UserService
 from app.database import AsyncSessionLocal, AuthLookupSessionLocal
