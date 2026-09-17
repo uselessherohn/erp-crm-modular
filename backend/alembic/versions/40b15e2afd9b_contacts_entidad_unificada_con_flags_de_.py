@@ -56,6 +56,16 @@ def upgrade() -> None:
 
     # Búsqueda pg_trgm/GIN obligatoria en 'name' (spec 1.1, DoD explícito
     # para contacts).
+    # HALLAZGO REAL (regresión QA, primera corrida contra Postgres real):
+    # esta migración nunca había corrido contra Postgres real antes — el
+    # operador gin_trgm_ops requiere la extensión pg_trgm, que ninguna
+    # migración del repo habilitaba. Sin este CREATE EXTENSION,
+    # `alembic upgrade head` fallaba siempre en una base limpia con
+    # `UndefinedObject: operator class "gin_trgm_ops" does not exist for
+    # access method "gin"`. Bug real, no falso positivo de test — no había
+    # ningún test que ejercitara una migración desde cero contra Postgres
+    # real hasta esta corrida.
+    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
     op.execute("CREATE INDEX ix_contacts_name_trgm ON contacts USING gin (name gin_trgm_ops)")
 
     # Row-Level Security (spec 5/DoD) — contacts tiene company_id.
