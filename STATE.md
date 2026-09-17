@@ -44,6 +44,56 @@ directamente — pendiente de una corrida de confirmación si se retoma
 `inventory`/`contacts`/`core` frontend en el futuro (bajo riesgo, el fix
 es transparente a nivel de API).
 
+## 0.1 Fase 0 de la regresión QA externa (sep-2026) — 2 bugs reales de extensiones + 1 falso positivo de verify_state.py
+
+Primera corrida de `alembic upgrade head` de este proyecto contra una
+base Postgres **completamente limpia**, siguiendo `spec_regresion_qa_erp_crm_v1.md`
+sección 1. El log original de Fase 0 (arriba, `LOG_EJECUCION.md`) registra
+`CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto;` como "confirmadas
+disponibles" en el servidor — pero esa confirmación nunca se tradujo en un
+`CREATE EXTENSION` dentro de una migración real. Dos bugs reales, mismo
+patrón:
+
+1. **Migración `40b15e2afd9b` (contacts)**: `CREATE INDEX
+   ix_contacts_name_trgm ... USING gin (name gin_trgm_ops)` sin que
+   ninguna migración habilitara `pg_trgm` antes. Bloqueaba
+   `alembic upgrade head` siempre, de punta a punta, en cualquier base
+   limpia — nunca se había ejecutado así hasta esta sesión. Corregido en
+   el commit `0da1637` (`CREATE EXTENSION IF NOT EXISTS pg_trgm` antes
+   del índice, mismo patrón que `btree_gist` en `1669f8fbbc6b`).
+2. **Migración `1669f8fbbc6b` (medical)**: `app/medical/services.py`
+   cifra `clinical_record_entries.content` y los campos clínicos de
+   `consultations` con `func.pgp_sym_encrypt`/`pgp_sym_decrypt`
+   (pgcrypto, DED-24/DED-25), pero la extensión nunca se habilitaba en
+   ninguna migración. No detectado antes porque ninguna sesión previa
+   tuvo Postgres real para ejercitar un INSERT/UPDATE real sobre esas
+   columnas. Corregido en el commit `a194f33`.
+
+Con ambos fixes, `alembic upgrade head` corre limpio (29 migraciones,
+head único `c4d8b3f61a97`), `scripts/validate_modules.py` confirma los
+26 módulos sin ciclos/huérfanos, y el escaneo de RLS
+(`information_schema.columns` × `pg_policies`) confirma **71/71 tablas**
+con `company_id` en `ENABLE`+`FORCE ROW LEVEL SECURITY` + policy
+`tenant_isolation`, sin excepciones.
+
+3. **`scripts/verify_state.py` — tercer falso positivo de la misma
+   clase que los 2 ya documentados** (ver `LOG_EJECUCION.md`):
+   `check_no_legacy_boolean_field()` escaneaba `*.py` de todo el repo
+   buscando el string literal `minimal_dependencies_only`, sin excluir
+   su propio archivo — que necesariamente lo contiene, porque es el
+   string que define la búsqueda. Reportaba `ERROR` en cada corrida
+   aunque el código de la app estuviera limpio (confirmado: era el
+   único hit). Corregido en el commit `95cef3c` excluyendo
+   `Path(__file__)` del escaneo. Con el fix, `verify_state.py --db-url
+   <real>` corre sin errores, incluyendo Nivel 1 (trigger
+   `trg_audit_immutable`, índice único de `idempotency_keys`).
+
+**`idempotency_keys` — TODO-03 (sección 6) confirmado cerrado**: tiene
+consumidores reales en `app/accounting/routers.py` y
+`app/ecommerce/routers.py` (facturas/pagos y el webhook de pago). No es
+un hallazgo nuevo — solo la primera confirmación por lectura de código
+de que el TODO ya estaba resuelto en la práctica.
+
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
@@ -1810,11 +1860,10 @@ para módulos anteriores)
   abierto — no se construyó, un `<div>` del widget = un profesional.
 - TODO-02(infraestructura/despliegue): refresh token a cookie httpOnly +
   `Secure` + `SameSite=Strict`.
-- TODO-03(cualquier módulo con `Idempotency-Key`): `idempotency_keys`
-  existe, sin consumidor — el primer módulo financiero/dispensación debe
-  implementar el flujo check-antes-de-escribir (spec 7), no ad-hoc.
-  `accounting` (módulo 6, Fase 2) es ese primer módulo financiero — pendiente
-  para POST /accounting/payments y POST /accounting/invoices.
+- TODO-03(cualquier módulo con `Idempotency-Key`): ~~`idempotency_keys`
+  existe, sin consumidor~~ — **cerrado**, confirmado en la Fase 0 de la
+  regresión QA externa (sep-2026, ver sección 0.1): consumidores reales
+  en `app/accounting/routers.py` y `app/ecommerce/routers.py`.
 - TODO-04(cualquier módulo no-Núcleo): `require_package`/
   `require_package_writable` construidos y probados, sin endpoint real
   que los use todavía.

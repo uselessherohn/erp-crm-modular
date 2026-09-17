@@ -323,5 +323,12 @@ entorno real en cada cierre en vez de confiar en la revisión de código:
   salario de un empleado viaja como `null` para quien no tiene el
   permiso `hr:employee:read-sensitive`, mientras el admin lo ve completo.
 
+- **Dos extensiones de Postgres nunca habilitadas en ninguna migración**
+  (`pg_trgm` en `contacts`, `pgcrypto` en `medical`) — encontradas en la
+  Fase 0 de la regresión QA externa (sep-2026), la primera vez que
+  `alembic upgrade head` corrió contra una base completamente limpia; la
+  primera bloqueaba la migración siempre, la segunda habría roto el
+  cifrado clínico en el primer uso real.
+
 Todos estos hallazgos, con el detalle completo de cómo se reprodujeron y
 corrigieron, están documentados en `LOG_EJECUCION.md`.

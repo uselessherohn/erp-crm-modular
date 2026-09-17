@@ -1829,3 +1829,55 @@ archivos, 35/35 tests** (antes 19/19, 30/30).
 
 **Resultado**: los tres pendientes documentados quedan cerrados. `README.md`/`STATE.md` actualizados
 con el detalle de cada bug real encontrado y corregido en el camino.
+
+---
+
+## REGRESIÓN QA EXTERNA (sep-2026) — Fase 0: setup del entorno real + integridad estructural
+
+Sesión nueva, siguiendo `spec_regresion_qa_erp_crm_v1.md` (auditor de QA con acceso real a
+infraestructura, ver su sección 0 — no otro constructor de features). Primera vez que este proyecto
+se clona del repo real (no un ZIP de sesión de chat) y se corre `alembic upgrade head` contra una
+base Postgres completamente limpia, en un entorno nuevo sin nada del estado anterior.
+
+**Setup real**: `apt-get install postgresql postgresql-contrib` → PostgreSQL 16.15. Roles creados
+exactamente como los espera `app/config.py`: `postgres` (admin/DDL), `erp_app` (runtime,
+`NOSUPERUSER NOBYPASSRLS` — confirmado sin bypass de RLS), `erp_auth_lookup` (`BYPASSRLS`, solo
+lookup pre-auth). Base `erp_crm_regresion` limpia. `pip install -r backend/requirements.txt` real
+contra PyPI — `openpyxl`/`reportlab`/`psycopg[binary]` (marcadas en sesiones anteriores como "no
+instaladas, sin red") importan correctamente.
+
+**`alembic upgrade head` — 2 bugs reales encontrados y corregidos** (ver detalle completo en
+`STATE.md` sección 0.1, no se repite acá):
+1. Migración `40b15e2afd9b` (contacts): `gin_trgm_ops` sin `CREATE EXTENSION pg_trgm` — bloqueaba
+   la migración siempre. Commit `0da1637`.
+2. Migración `1669f8fbbc6b` (medical): `pgp_sym_encrypt`/`pgp_sym_decrypt` sin `CREATE EXTENSION
+   pgcrypto` — habría roto el cifrado clínico en el primer INSERT/UPDATE real. Commit `a194f33`.
+
+Con ambos corregidos: `alembic upgrade head` limpio (29 migraciones, head único `c4d8b3f61a97`),
+`scripts/validate_modules.py modulos_erp_crm_v10_4.json` → 26 módulos, sin ciclos, sin dependencias
+huérfanas.
+
+**Bootstrap de la compañía de prueba**: `bootstrap_admin.py` busca "El Roble" por nombre, pero
+ninguna migración/fixture la crea — hay que levantar el servidor real (`uvicorn`, con `setsid` para
+que sobreviva entre comandos del entorno de esta sesión) y crearla vía `POST /internal/companies`
+con `X-Internal-Api-Key`. Confirmado el camino feliz de spec 8.0: la compañía nueva queda con
+`timezone="America/Tegucigalpa"`, `currency_code="HNL"`, `locale="es-HN"` por defecto. Con la
+compañía creada, `python -m scripts.bootstrap_admin` (como módulo, no como script suelto — necesita
+el paquete `app` en el path) → `bootstrap ok — user_id: 1 role_id: 1`.
+
+**`scripts/verify_state.py --db-url <real>` — tercer falso positivo de la misma clase que los 2 ya
+documentados**: `check_no_legacy_boolean_field()` se matcheaba a sí mismo buscando
+`minimal_dependencies_only` en todo el repo, sin excluir su propio archivo. Corregido en el commit
+`95cef3c` (excluye `Path(__file__)`). Con el fix: sin errores, incluyendo Nivel 1 real (trigger
+`trg_audit_immutable`, índice único de `idempotency_keys`).
+
+**Escaneo de RLS** (spec sección 4, `information_schema.columns` × `pg_policies`): las 71 tablas con
+columna `company_id` tienen `ENABLE`+`FORCE ROW LEVEL SECURITY` y policy `tenant_isolation`, sin
+excepciones.
+
+**`idempotency_keys` — TODO-03 confirmado cerrado**: consumidores reales en
+`app/accounting/routers.py` y `app/ecommerce/routers.py`.
+
+**Resultado de Fase 0**: sin bloqueantes pendientes. 3 commits de fix aplicados por separado sobre
+`main` (no pusheados a GitHub todavía — este entorno no tiene credenciales de escritura al remoto).
+Lista para arrancar Fase 1 (los 26 módulos, sección 3/5 del spec de regresión).
