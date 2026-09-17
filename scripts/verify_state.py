@@ -119,10 +119,20 @@ def check_no_legacy_boolean_field(repo_root: Path, state_text: str) -> list[Find
     else:
         findings.append(Finding("OK", "STATE.md no usa el booleano viejo minimal_dependencies_only"))
 
-    # Búsqueda heurística de código real, si el repo está disponible
+    # Búsqueda heurística de código real, si el repo está disponible.
+    # HALLAZGO REAL (regresión QA, tercer falso positivo de esta clase en
+    # este script — los dos anteriores ya están documentados en
+    # LOG_EJECUCION.md): rglob("*.py") barre el repo entero, incluido este
+    # mismo archivo, que necesariamente contiene el string literal que
+    # busca (está definido dos líneas más arriba). Sin excluirse a sí
+    # mismo, este check siempre reporta un ERROR aunque el código de la
+    # app esté limpio. Se excluye explícitamente por ruta absoluta.
+    self_path = Path(__file__).resolve()
     hits: list[str] = []
     if repo_root.exists():
         for py_file in repo_root.rglob("*.py"):
+            if py_file.resolve() == self_path:
+                continue
             try:
                 if "minimal_dependencies_only" in py_file.read_text(encoding="utf-8", errors="ignore"):
                     hits.append(str(py_file))
