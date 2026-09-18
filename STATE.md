@@ -665,6 +665,36 @@ spec 7.1) — **Fases 1-4 completas**
   previos + 1 nuevo), confirmado en corrida limpia de 51s (una corrida
   intermedia mostró la misma intermitencia ya documentada de
   `AccountsPage` bajo carga del sandbox — no una regresión).
+- **Regresión QA externa (sep-2026)**: `tests/test_hr_module.py` escrito
+  desde cero (el catálogo ya documentaba correctamente este hueco, sin
+  sorpresas). 7 casos, incluidos los 2 que el catálogo marcaba como "sin
+  respuesta confirmada":
+  1. **Jerarquía circular**: no hay una validación explícita que la
+     rechace — es **estructuralmente imposible**, porque
+     `EmployeeService` no tiene NINGÚN endpoint de actualización
+     (`create`/`get`/`list`/`terminate` únicamente) y `manager_employee_id`
+     solo puede apuntar a un empleado que ya existía antes. El resultado
+     observable coincide con lo que pedía el catálogo (nunca hay un
+     ciclo persistido), pero el mecanismo real es distinto de una regla
+     de validación — es la ausencia total de un camino para actualizar
+     el legajo después de crearlo.
+  2. **Desactivar un jefe con subordinados**: confirmado que NO bloquea
+     y NO reasigna — deja al subordinado con `manager_employee_id`
+     apuntando a un empleado `terminated`, huérfano real, sin ninguna
+     limpieza automática.
+  3. `hr:employee:read-sensitive` (DED-21): confirmado con la función
+     real del router (`user_has_permission`, no una reimplementación) —
+     sin el permiso, `salary` viaja como `None` server-side (el campo
+     existe en el JSON, pero enmascarado, nunca omitido ad-hoc ni
+     filtrable client-side); con el permiso, viaja completo.
+  **Gap de producto observado, no arreglado sin confirmar alcance**: no
+  existe ningún endpoint para actualizar un `Employee` después de
+  creado — ni reasignar `manager_employee_id`, ni cambiar `position_id`/
+  `department`/`salary`. El legajo es efectivamente de solo
+  alta+baja. Si esto es intencional para este cierre o un gap a cerrar
+  como los de `core`/`contacts`, es una decisión de producto pendiente
+  de confirmar, no algo que se decidió unilateralmente acá. 7/7, 229/229
+  en la suite completa.
 
 ### `medical` (módulo 9 — Expediente Clínico, Agenda Médica, Consulta) — ✓ COMPLETO
 - Paquete requerido: `medical` (`require_package("medical")` en todas las

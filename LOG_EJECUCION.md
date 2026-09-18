@@ -2059,3 +2059,31 @@ compañía nunca visible ni asociable; RLS cross-tenant en Opportunity.
 Los 10 casos pasaron en el primer intento real, sin ningún bug encontrado.
 
 222/222 en la suite completa.
+
+---
+
+## hr: test_hr_module.py escrito desde cero (sep-2026)
+
+Gap ya documentado correctamente por el catálogo (a diferencia de accounting, sin sorpresa acá).
+7 casos escritos desde cero, respondiendo los 2 puntos que el catálogo marcaba explícitamente como
+"confirmar la regla real":
+
+- Jerarquía circular: no hay validación explícita — es estructuralmente imposible, porque
+  EmployeeService no tiene ningún endpoint de actualización (solo create/get/list/terminate) y
+  manager_employee_id solo puede apuntar a un empleado que ya existía antes de crear el nuevo.
+- Desactivar un jefe con subordinados: confirmado que NO bloquea ni reasigna — deja al subordinado
+  apuntando a un manager terminated, huérfano real sin limpieza automática.
+- hr:employee:read-sensitive (DED-21): confirmado con la función real del router
+  (user_has_permission) que salary viaja como None server-side sin el permiso, completo con él.
+
+Al escribir el test de enmascarado, primer bug de infraestructura de test en este archivo: la tabla
+`permissions` es global, sembrada solo por `scripts/bootstrap_admin.py` — una compañía de test nueva
+no la tiene poblada. Sembrado idempotente dentro del propio test (mismos códigos reales del router).
+Segundo bug, ya conocido: mismo NoReferencedTableError de siempre (falta `app.models_registry`) al
+ser el primer test de este archivo que crea un User real — mismo fix ya aplicado en otros 4 archivos.
+
+**Gap de producto observado y reportado, no arreglado sin confirmar alcance con el usuario**: no
+existe ningún endpoint para actualizar un Employee después de creado (reasignar manager, cambiar
+puesto/salario) — el legajo es efectivamente de solo alta+baja.
+
+7/7 en test_hr_module.py, 229/229 en la suite completa.
