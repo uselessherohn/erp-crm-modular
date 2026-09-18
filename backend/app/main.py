@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -24,6 +26,17 @@ from app.reports import routers as reports_routers
 from app.pharmacy import routers as pharmacy_routers
 from app.audit import routers as audit_routers
 from app.shared.exceptions import DomainError, ValidationError as DomainValidationError
+
+# HALLAZGO REAL (regresión QA externa, sep-2026): sin esto, el logger raíz
+# de Python queda en WARNING sin ningún handler — cualquier logger.info()
+# de la app se descarta en silencio, nunca llega a ningún lado (ni
+# siquiera a stderr). Afectaba a notifications.LoggingEmailSender (nunca
+# detectado porque tests/test_notifications_module.py inyecta un
+# _FakeEmailSender de test, no ejercita el logger real) y al nuevo stub
+# de password-reset de core (ver PasswordResetService._send_reset_email).
+# Nivel INFO: visibilidad de estos "envíos" simulados en dev/sandbox sin
+# volverse demasiado ruidoso (no DEBUG).
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 
 app = FastAPI(title="ERP/CRM Modular — Núcleo", version="10.4")
 
