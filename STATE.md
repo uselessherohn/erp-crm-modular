@@ -281,6 +281,21 @@ LOG_EJECUCION.md.
   `correlation_id`, atómicos.
 - DEDUCIBLE: `ajuste` se interpreta siempre como baja. No confirmado por
   Roberto.
+- **Regresión QA externa (sep-2026)**: matriz del catálogo (camino feliz
+  por tipo/lote, límites, concurrencia con conexiones reales paralelas)
+  ya cubierta por la suite existente (8/8 aislado, sin cambios). Único
+  hueco real encontrado: **`product_type=servicio` nunca se ejercitaba
+  en ningún test, y el código no lo distingue de
+  `facturable`/`consumible` en absoluto** — un producto `servicio` hoy
+  puede acumular/perder stock exactamente igual que cualquier otro tipo.
+  La spec (8.1) lista los tres tipos pero no aclara si `servicio`
+  debería bloquear `StockMovement` — no hay decisión que tomar sin
+  confirmar con Roberto, así que se documenta el comportamiento REAL
+  actual con un test (`test_servicio_product_type_has_no_special_stock_
+  handling`) en vez de asumir una regla e implementarla. `reserved_
+  quantity` (columna retroactiva) se revisa en el módulo 5 (`sales`),
+  que es donde efectivamente se ejercita — ya tiene test dedicado en
+  `test_sales_module.py`.
 - [extendido] fuera de alcance: FEFO/FIFO/LIFO, alertas de caducidad,
   bloqueo/cuarentena de lote, costeo por lote, valoración, conversión de
   unidades, kits/BOM (TODO-07).

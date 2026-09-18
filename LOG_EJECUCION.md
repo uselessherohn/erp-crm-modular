@@ -1956,3 +1956,18 @@ sería un request real) y los 3 fixes funcionan correctamente:
 - `ContactService.update_credit_limit` → setea y también limpia (`None`) el límite de crédito.
 
 4 tests nuevos en `test_contacts_module.py` (10/10 aislado), suite completa 193/193 sin regresiones.
+
+---
+
+## inventory: matriz de regresión QA externa, módulo 3 (sep-2026)
+
+Suite existente (8/8) corrida aislada, cubre camino feliz por tipo/lote, límites y concurrencia real
+(conexiones paralelas) sin cambios necesarios. Único hueco real: `product_type=servicio` (spec 8.1)
+nunca se había ejercitado — confirmado con un test nuevo que el código no lo distingue de
+`facturable`/`consumible` en movimientos de stock. No se tocó código de producto (no hay bug
+confirmado, es una decisión de negocio sin tomar, no una regresión) — solo se agregó el test que
+documenta el comportamiento real actual, para que quede como referencia si alguna vez se decide
+bloquear `StockMovement` para servicios. `reserved_quantity` queda para revisar en el módulo 5
+(`sales`), que es donde se ejercita de verdad — ya tiene cobertura en `test_sales_module.py`.
+
+9/9 en `test_inventory_module.py`, 194/194 en la suite completa.

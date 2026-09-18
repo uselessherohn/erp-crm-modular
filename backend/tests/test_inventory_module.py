@@ -278,3 +278,34 @@ async def test_concurrent_stock_deductions_never_go_negative(company, warehouse_
         final_quantity = levels[0].quantity
         assert final_quantity >= 0, f"Stock terminó negativo ({final_quantity}) — bug de concurrencia real"
         assert final_quantity == Decimal(100) - Decimal(15) * successes
+
+
+@pytest.mark.asyncio
+async def test_servicio_product_type_has_no_special_stock_handling(db, company, warehouse_a):
+    """Hallazgo real de la regresión QA externa (sep-2026): spec 8.1 lista
+    'facturables/consumibles/servicios' como los tres tipos del catálogo
+    de productos, pero no aclara si `servicio` debería comportarse
+    distinto en movimientos de stock (conceptualmente, un servicio no
+    debería necesitar "existencias"). Ningún test ni STATE.md documentaba
+    esto hasta ahora. Este test documenta el comportamiento REAL actual
+    (no lo que "debería" ser): un producto `servicio` se comporta
+    exactamente igual que `facturable`/`consumible` — puede acumular
+    stock, puede quedarse sin stock, nada en el código distingue el tipo
+    a nivel de movimientos. Si en algún momento se decide que `servicio`
+    debe bloquear StockMovement, este test es el que hay que cambiar
+    primero (y documentar la decisión en STATE.md)."""
+    servicio = await ProductService.create(
+        db, company_id=company.id,
+        payload=schemas.ProductCreate(sku="SRV-001", name="Instalación", product_type=schemas.ProductTypeEnum.servicio),
+        created_by=None,
+    )
+
+    movement = await StockService.record_movement(
+        db, company_id=company.id,
+        payload=schemas.StockMovementCreate(
+            product_id=servicio.id, warehouse_id=warehouse_a.id,
+            movement_type=schemas.MovementTypeEnum.entrada, quantity=Decimal(1),
+        ),
+        created_by=None,
+    )
+    assert movement.quantity == Decimal(1)  # comportamiento actual: sin restricción especial
