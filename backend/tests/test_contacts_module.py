@@ -136,3 +136,86 @@ async def test_rls_blocks_cross_tenant_contact_read(db):
     await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_b.id)})
     result = await db.execute(text("SELECT count(*) FROM contacts WHERE id = :id"), {"id": contact.id})
     assert result.scalar_one() == 0, "RLS falló: la compañía B pudo leer un contacto de la compañía A"
+
+
+# ---------------------------------------------------------------------------
+# Hallazgos reales de la regresión QA externa (sep-2026): credit_limit sin
+# endpoint de escritura, búsqueda sin cubrir email/tax_id, emails duplicados
+# permitidos sin decisión registrada. Ver STATE.md módulo 2 y la migración
+# ea97b3b319d5 para el detalle completo.
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_duplicate_email_same_company_rejected_null_allowed(db, company):
+    from app.shared.exceptions import ConflictError
+
+    await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(name="Uno", email="dup@x.hn", is_customer=True),
+        created_by=None,
+    )
+
+    with pytest.raises(ConflictError):
+        await ContactService.create_contact(
+            db, company_id=company.id,
+            payload=contacts_schemas.ContactCreate(name="Dos", email="dup@x.hn", is_customer=True),
+            created_by=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_multiple_contacts_without_email_allowed(db, company):
+    """El índice único es parcial (WHERE email IS NOT NULL) — dos
+    contactos sin email no deben chocar entre sí."""
+    n1 = await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(name="Sin email 1", is_customer=True),
+        created_by=None,
+    )
+    n2 = await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(name="Sin email 2", is_customer=True),
+        created_by=None,
+    )
+    assert n1.id != n2.id
+
+
+@pytest.mark.asyncio
+async def test_search_finds_by_email_and_tax_id(db, company):
+    unique = uuid.uuid4().hex[:8]
+    await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(
+            name="Buscable", email=f"buscable_{unique}@x.hn", tax_id=f"RTN-{unique}", is_vendor=True
+        ),
+        created_by=None,
+    )
+
+    by_email = await ContactService.list_contacts(db, company_id=company.id, search=f"buscable_{unique}@x.hn")
+    assert len(by_email) == 1 and by_email[0].name == "Buscable"
+
+    by_tax_id = await ContactService.list_contacts(db, company_id=company.id, search=f"RTN-{unique}")
+    assert len(by_tax_id) == 1 and by_tax_id[0].name == "Buscable"
+
+
+@pytest.mark.asyncio
+async def test_credit_limit_writable_via_dedicated_service_method(db, company):
+    """credit_limit (leído por accounting.CreditControlService) no tenía
+    ningún endpoint de escritura — hallazgo real, cerrado con
+    ContactService.update_credit_limit."""
+    contact = await ContactService.create_contact(
+        db, company_id=company.id,
+        payload=contacts_schemas.ContactCreate(name="Con crédito", is_customer=True),
+        created_by=None,
+    )
+    assert contact.credit_limit is None
+
+    updated = await ContactService.update_credit_limit(
+        db, company_id=company.id, contact_id=contact.id, credit_limit=5000, updated_by=None
+    )
+    assert updated.credit_limit == 5000
+
+    # None vuelve a "sin límite configurado" — no es lo mismo que 0.
+    cleared = await ContactService.update_credit_limit(
+        db, company_id=company.id, contact_id=contact.id, credit_limit=None, updated_by=None
+    )
+    assert cleared.credit_limit is None
