@@ -1971,3 +1971,19 @@ bloquear `StockMovement` para servicios. `reserved_quantity` queda para revisar 
 (`sales`), que es donde se ejercita de verdad — ya tiene cobertura en `test_sales_module.py`.
 
 9/9 en `test_inventory_module.py`, 194/194 en la suite completa.
+
+---
+
+## purchasing: matriz de regresión QA externa, módulo 4 (sep-2026)
+
+Suite existente (10/10) corrida aislada — sin bugs encontrados, cobertura casi completa del catálogo
+(numeración, vendor flag, ciclo completo, recepción parcial/exceso, doble confirmación, cancelar tras
+recibir, producto duplicado en líneas, RLS). Solo 2 huecos de cobertura, ambos con la regla ya bien
+implementada en el código:
+
+- Recibir mercancía de una PO en `draft` → rechazado (`receive()` ya exigía `status in ('confirmed',
+  'received')`).
+- Cerrar con saldo pendiente sin recibir → confirmado que NO existe cierre forzado: `close()` exige
+  recepción TOTAL (`status=='received'`), ni una recepción parcial alcanza.
+
+12/12 en `test_purchasing_module.py`, 196/196 en la suite completa.

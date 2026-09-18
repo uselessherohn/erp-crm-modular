@@ -322,6 +322,16 @@ LOG_EJECUCION.md.
   `quantity_received` por línea hasta completar.
 - [extendido] fuera de alcance: Requisiciones internas, Gestión/
   Evaluación de Proveedores, RFQ, Contratos Marco/Blanket Orders.
+- **Regresión QA externa (sep-2026)**: matriz del catálogo ya cubierta
+  casi entera por la suite existente (10/10 aislado, sin bugs
+  encontrados). Solo faltaban 2 tests explícitos para reglas que el
+  código YA implementaba correctamente, sin cobertura: recibir mercancía
+  de una PO en `draft` (nunca confirmada) → rechazado
+  (`test_receive_on_draft_po_rejected`); cerrar una PO con saldo
+  pendiente sin recibir → **confirmado que se bloquea, no existe cierre
+  forzado** — `close()` exige `status=='received'` (recepción TOTAL, no
+  solo `confirmed`), ni siquiera una recepción parcial alcanza
+  (`test_close_with_pending_balance_rejected_no_forced_close`).
 - Contrato Fase 2.5 re-congelado: `contracts/openapi.json` — 24 rutas, 33
   schemas. Frontend completo (Fase 3): listar/crear/confirmar/recibir
   (parcial, desde la UI)/cerrar/cancelar. Fase 4: flujo real de punta a

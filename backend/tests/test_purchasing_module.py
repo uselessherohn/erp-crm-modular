@@ -287,3 +287,58 @@ async def test_rls_blocks_cross_tenant_purchase_order_read(db):
     await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_b.id)})
     with pytest.raises(NotFoundError):
         await PurchaseOrderService.get(db, company_id=company_b.id, po_id=po_a.id)
+
+
+@pytest.mark.asyncio
+async def test_receive_on_draft_po_rejected(db, company, vendor, warehouse, product):
+    """Catálogo módulo 4: recibir mercancía de una PO en 'draft' (nunca
+    confirmada) debe rechazarse. El código ya lo hacía (receive() exige
+    status in ('confirmed','received')) — faltaba el test explícito."""
+    po = await PurchaseOrderService.create_draft(
+        db, company_id=company.id,
+        payload=schemas.PurchaseOrderCreate(
+            vendor_id=vendor.id, warehouse_id=warehouse.id,
+            lines=[schemas.PurchaseOrderLineCreate(product_id=product.id, quantity_ordered=Decimal(10), unit_cost=Decimal("5.50"))],
+        ),
+        created_by=None,
+    )
+    assert po.status == "draft"
+
+    with pytest.raises(ConflictError):
+        await PurchaseOrderService.receive(
+            db, company_id=company.id, po_id=po.id,
+            payload=schemas.ReceivePurchaseOrder(lines=[schemas.ReceiveLineItem(line_id=po.lines[0].id, quantity=Decimal(5))]),
+            actor_id=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_close_with_pending_balance_rejected_no_forced_close(db, company, vendor, warehouse, product):
+    """Catálogo módulo 4: ¿el sistema permite cerrar una PO con saldo
+    pendiente sin recibir (cierre forzado), o lo bloquea? Respuesta real
+    confirmada: lo bloquea — no existe cierre forzado. close() exige
+    status=='received' (recepción TOTAL), no solo 'confirmed'."""
+    po = await PurchaseOrderService.create_draft(
+        db, company_id=company.id,
+        payload=schemas.PurchaseOrderCreate(
+            vendor_id=vendor.id, warehouse_id=warehouse.id,
+            lines=[schemas.PurchaseOrderLineCreate(product_id=product.id, quantity_ordered=Decimal(10), unit_cost=Decimal("5.50"))],
+        ),
+        created_by=None,
+    )
+    po = await PurchaseOrderService.confirm(db, company_id=company.id, po_id=po.id, actor_id=None)
+    assert po.status == "confirmed"
+
+    # Sin recibir nada, intentar cerrar directamente.
+    with pytest.raises(ConflictError):
+        await PurchaseOrderService.close(db, company_id=company.id, po_id=po.id, actor_id=None)
+
+    # Recepción PARCIAL tampoco alcanza para cerrar.
+    po = await PurchaseOrderService.receive(
+        db, company_id=company.id, po_id=po.id,
+        payload=schemas.ReceivePurchaseOrder(lines=[schemas.ReceiveLineItem(line_id=po.lines[0].id, quantity=Decimal(4))]),
+        actor_id=None,
+    )
+    assert po.status == "confirmed"  # parcial, no "received"
+    with pytest.raises(ConflictError):
+        await PurchaseOrderService.close(db, company_id=company.id, po_id=po.id, actor_id=None)
