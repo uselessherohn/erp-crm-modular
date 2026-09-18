@@ -2008,3 +2008,33 @@ real vía `ContactService.update_credit_limit` del módulo 2 de esta misma regre
   saldo esté groseramente excedido.
 
 13/13 en `test_sales_module.py`, 198/198 en la suite completa.
+
+---
+
+## accounting: test_accounting_module.py escrito desde cero (sep-2026)
+
+Hallazgo real sobre el propio catálogo de regresión: `catalogo_casos_regresion_erp_crm_v1.md`
+afirma que `tests/test_accounting_module.py` "ya existe de una sesión anterior". Búsqueda exhaustiva
+en el repo real (clonado de GitHub, `find . -iname "test_accounting*"`) confirma que NO existe en
+ningún lado. No se le creyó al catálogo a ciegas — se verificó primero, y el catálogo resultó estar
+desactualizado o simplemente incorrecto en este punto.
+
+Escrito desde cero, 14 casos (11 funciones, 4 parametrizadas para las combinaciones nota×dirección),
+cubriendo el checklist completo de la sección del catálogo: ciclo factura venta/compra con asiento
+balanceado verificado por consulta directa a `journal_lines`; las 4 combinaciones
+nota-crédito/débito×venta/compra con `document_type` verificado explícitamente (primer test de
+BACKEND para el bug real `sale_credit_note`→`sales_credit_note` ya corregido, que antes solo tenía
+cobertura vía test de integración de frontend); pago con asignación actualiza `balance_due`/`status`
+correctamente (parcial→total); asiento desbalanceado rechazado; documento sin
+`DocumentAccountMapping` rechazado SIN dejar asiento parcial (confirmado: la factura queda en draft,
+sin `journal_entry_id`, cero filas en `journal_entries` para ese documento); pago que excede el saldo
+real chequeado en `post()` bajo lock, no en `create()` (dos pagos individualmente válidos al crearse,
+el segundo falla al postearse porque el primero ya saldó la factura); factura `posted` no se cancela
+directo (pero una `draft` sí); Motor de Contención Financiera con las 2 condiciones — vencida y
+excedida — probadas CADA UNA AISLADA (no solo combinadas, como pedía el catálogo); RLS cross-tenant.
+
+**Los 14 casos pasaron en el primer intento real, sin ningún bug encontrado** — el motor de asientos
+ya estaba bien construido de las sesiones anteriores; el gap era pura falta de cobertura de test
+persistida en el repo, no lógica rota.
+
+212/212 en la suite completa.

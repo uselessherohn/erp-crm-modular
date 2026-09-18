@@ -510,6 +510,26 @@ spec 7.1) — **Fases 1-4 completas**
 - `pytest tests/` → **50/50** en todo momento de este cierre, sin
   regresión. `npx vitest run` → **20/20** (16 previos + 4 nuevos).
   `npx tsc --noEmit` limpio, `npm run build` exitoso.
+- **Regresión QA externa (sep-2026) — hallazgo real sobre el propio
+  catálogo de regresión**: `catalogo_casos_regresion_erp_crm_v1.md`
+  afirma "Ya existe `tests/test_accounting_module.py` de una sesión
+  anterior — correrlo primero". Confirmado por búsqueda exhaustiva en el
+  repo real (clonado de GitHub): **ese archivo no existía en ningún
+  lado.** El catálogo estaba desactualizado o incorrecto en este punto —
+  no se le creyó a ciegas, se verificó primero. Escrito desde cero
+  (`tests/test_accounting_module.py`, 14 casos): ciclo completo factura
+  venta/compra con asiento balanceado, las 4 combinaciones nota×dirección
+  (`document_type` correcto, primer test de BACKEND para el bug ya
+  corregido que antes solo se verificaba vía frontend), pago con
+  asignación actualiza `balance_due`/`status`, asiento desbalanceado
+  rechazado, documento sin mapeo de cuenta rechazado sin dejar asiento
+  parcial, pago que excede el saldo real chequeado en `post()` (no en
+  `create()`) con dos pagos "válidos" por separado, factura `posted` no
+  se cancela directo, Motor de Contención Financiera con las 2
+  condiciones (vencida/excedida) probadas AISLADAS una de otra (no solo
+  combinadas), RLS. **Todo pasó en el primer intento real — el motor de
+  asientos ya estaba bien construido, el gap era pura falta de cobertura
+  de test, no bugs.** 14/14, 212/212 en la suite completa.
 
 ### Módulo 7 — pipeline de leads/oportunidades sobre contacts (spec 2.3,
 8.0) — **Fases 1-4 completas**
