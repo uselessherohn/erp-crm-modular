@@ -20,6 +20,10 @@ async def bootstrap():
             models.Permission(code="core:user:create", description="Crear usuarios"),
             models.Permission(code="core:user:list", description="Listar usuarios"),
             models.Permission(code="core:user:read", description="Ver un usuario"),
+            models.Permission(
+                code="core:user:update_status",
+                description="Activar/desactivar usuarios (spec 8.0, hallazgo real sep-2026)",
+            ),
             models.Permission(code="core:role:create", description="Crear roles"),
             models.Permission(code="core:role:list", description="Listar roles"),
             models.Permission(code="contacts:contact:create", description="Crear contactos"),

@@ -52,3 +52,17 @@ def generate_refresh_token() -> tuple[str, str]:
 
 def hash_refresh_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def generate_password_reset_token() -> tuple[str, str]:
+    """Mismo mecanismo que generate_refresh_token (token de un solo uso,
+    hasheado en reposo) — separado como función propia porque semántica y
+    tabla son distintas (password_reset_tokens, no user_sessions), aunque
+    la implementación criptográfica sea idéntica."""
+    raw = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, token_hash
+
+
+def hash_password_reset_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode()).hexdigest()

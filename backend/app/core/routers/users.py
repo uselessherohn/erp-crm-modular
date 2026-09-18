@@ -46,3 +46,20 @@ async def get_user(
 ) -> schemas.UserRead:
     user = await UserService.get_user(db, company_id=company_id, user_id=user_id)
     return schemas.UserRead.model_validate(user)
+
+
+@router.patch("/{user_id}/status", response_model=schemas.UserRead)
+async def set_user_status(
+    user_id: int,
+    payload: schemas.UserStatusUpdate,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("core:user:update_status")),
+) -> schemas.UserRead:
+    """Activar/desactivar usuario (spec 8.0, "Gestión de Usuarios [core]:
+    perfiles, estados...") — hallazgo real de la regresión QA externa,
+    sep-2026: no existía ninguna forma de hacer esto."""
+    user = await UserService.set_active(
+        db, company_id=company_id, user_id=user_id, is_active=payload.is_active, actor_id=actor.id
+    )
+    return schemas.UserRead.model_validate(user)

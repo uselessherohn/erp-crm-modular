@@ -104,8 +104,17 @@ class UserRead(UserBase):
     id: int
     company_id: int
     is_active: bool
+    totp_enabled: bool
     created_at: datetime
     updated_at: datetime
+
+
+class UserStatusUpdate(BaseModel):
+    """PATCH /users/{id}/status — activar/reactivar usuario (spec 8.0,
+    "Gestión de Usuarios [core]: perfiles, estados..."). Hallazgo real de
+    la regresión QA externa, sep-2026: no existía ninguna forma de
+    desactivar/reactivar un usuario."""
+    is_active: bool
 
 
 # ---------------------------------------------------------------------------
@@ -114,12 +123,43 @@ class UserRead(UserBase):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    totp_code: str | None = Field(
+        None, description="Requerido solo si el usuario tiene 2FA habilitado"
+    )
 
 
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+# ---------------------------------------------------------------------------
+# Recuperación de contraseña (spec 8.0 [core] — hallazgo real, sep-2026)
+# ---------------------------------------------------------------------------
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+
+# ---------------------------------------------------------------------------
+# 2FA / TOTP (spec 8.0 [core] — hallazgo real, sep-2026)
+# ---------------------------------------------------------------------------
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+
+class TwoFactorConfirmRequest(BaseModel):
+    code: str
+
+
+class TwoFactorDisableRequest(BaseModel):
+    password: str
 
 
 # ---------------------------------------------------------------------------

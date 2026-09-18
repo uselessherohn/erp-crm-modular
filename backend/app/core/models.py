@@ -30,6 +30,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     func,
@@ -169,6 +170,14 @@ class User(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
 
+    # Autenticación y Seguridad [core] — 2FA (TOTP), spec 8.0. Secreto
+    # cifrado en reposo (pgp_sym_encrypt/pgcrypto), mismo patrón que
+    # medical (ver app/medical/services.py _encrypt/_decrypt_col) —
+    # hallazgo real de la regresión QA externa, sep-2026: nunca se había
+    # construido pese a estar marcado [core], no [extendido].
+    totp_secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+
     # Autenticación y seguridad [core]: bloqueo por intentos
     failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -206,7 +215,6 @@ class User(Base):
 class UserSession(Base):
     """Sesiones activas / refresh tokens (Autenticación y Seguridad [core])."""
     __tablename__ = "user_sessions"
-
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
@@ -218,6 +226,24 @@ class UserSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PasswordResetToken(Base):
+    """Recuperación de contraseña (Autenticación y Seguridad [core], spec
+    8.0) — hallazgo real de la regresión QA externa, sep-2026: nunca se
+    había construido. Mismo patrón que UserSession: token de un solo uso,
+    hasheado en reposo, nunca se persiste el valor plano."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ---------------------------------------------------------------------------

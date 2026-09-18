@@ -45,8 +45,16 @@ class Settings(BaseSettings):
 
     # Gestión de clave pgcrypto (spec 1.1) — DEDUCIBLE con default declarado:
     # variable de entorno vía pydantic-settings, sin rotación programada.
-    # Se usa por primera vez en el módulo `medical` (módulo 9), no en `core`.
+    # Se usa por primera vez en `core` (2FA, totp_secret_encrypted —
+    # hallazgo real de la regresión QA externa, sep-2026) y luego en
+    # `medical` (módulo 9).
     pgcrypto_key: str = "CHANGE_ME_IN_PRODUCTION_ENV"
+
+    # Recuperación de contraseña (spec 8.0 [core] — hallazgo real, sep-2026)
+    password_reset_token_expire_minutes: int = 30
+
+    # 2FA / TOTP (spec 8.0 [core] — hallazgo real, sep-2026)
+    totp_issuer_name: str = "ERP/CRM Modular"
 
     # Idempotencia — TTL por dominio en horas (spec 7, corregido en v10.4)
     idempotency_ttl_hours_sales: int = 24

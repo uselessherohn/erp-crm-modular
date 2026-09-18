@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
+import pyotp
 
 from app.core import models, schemas, security
 from app.config import settings
@@ -170,6 +171,62 @@ class UserService:
         result = await db.execute(select(models.User).where(models.User.company_id == company_id))
         return list(result.scalars().all())
 
+    @staticmethod
+    async def set_active(
+        db: AsyncSession, *, company_id: int, user_id: int, is_active: bool, actor_id: int
+    ) -> models.User:
+        """Activar/desactivar usuario (spec 8.0, "Gestión de Usuarios
+        [core]: perfiles, estados...") — hallazgo real de la regresión QA
+        externa, sep-2026: no existía ninguna forma de hacer esto.
+
+        Idempotente (catálogo de regresión, sección 3.3 "transiciones de
+        estado inválidas"): desactivar un usuario ya inactivo, o reactivar
+        uno ya activo, no es error — devuelve el estado actual sin
+        volver a escribir ni auditar de nuevo.
+
+        Al desactivar: revoca todas las sesiones activas (refresh tokens)
+        del usuario, de inmediato — no espera a que expiren. El access
+        token JWT ya emitido sigue siendo válido en tránsito, pero
+        get_current_user vuelve a chequear is_active en cada request
+        (app/core/dependencies.py), así que la siguiente petición del
+        usuario con ese token también falla — la ventana de exposición es
+        como máximo el tiempo de vida restante de un único access token
+        (jwt_access_token_expire_minutes), nunca indefinida vía refresh."""
+        user = await UserService.get_user(db, company_id=company_id, user_id=user_id)
+
+        if user.is_active == is_active:
+            return user  # no-op idempotente — sin doble escritura ni doble auditoría
+
+        if not is_active and user_id == actor_id:
+            raise ValidationError("No podés desactivar tu propio usuario")
+
+        user.is_active = is_active
+        user.updated_by = actor_id
+
+        if not is_active:
+            from sqlalchemy import update as _update
+
+            await db.execute(
+                _update(models.UserSession)
+                .where(
+                    models.UserSession.user_id == user_id,
+                    models.UserSession.revoked_at.is_(None),
+                )
+                .values(revoked_at=datetime.now(timezone.utc))
+            )
+
+        await AuditService.log_event(
+            db,
+            company_id=company_id,
+            event="user.activated" if is_active else "user.deactivated",
+            entity_type="user",
+            entity_id=user.id,
+            user_id=actor_id,
+        )
+        await db.commit()
+        await db.refresh(user)
+        return user
+
 
 # ---------------------------------------------------------------------------
 # Roles
@@ -281,6 +338,24 @@ class AuthService:
         user.failed_login_attempts = 0
         user.locked_until = None
 
+        if user.totp_enabled:
+            if not payload.totp_code:
+                await db.commit()
+                raise ValidationError(
+                    "Este usuario tiene 2FA habilitado — falta el código TOTP (totp_code)",
+                    details={"requires_2fa": True},
+                )
+            # DEDUCIBLE: un código TOTP incorrecto no incrementa
+            # failed_login_attempts (ese contador es específico de
+            # contraseña, ya consumido arriba). Rate-limiting específico
+            # para fuerza bruta de TOTP queda fuera de este cierre — el
+            # código de 6 dígitos + ventana de 30s ya limita naturalmente
+            # el espacio de intentos por segundo, pero no hay un tope
+            # explícito de intentos como sí existe para la contraseña.
+            if not await TwoFactorService._verify_code(db, user=user, code=payload.totp_code):
+                await db.commit()
+                raise invalid_credentials
+
         access_token = security.create_access_token(user_id=user.id, company_id=company_id)
         raw_refresh, refresh_hash = security.generate_refresh_token()
 
@@ -337,6 +412,18 @@ class AuthService:
         if session is None or session.revoked_at is not None or session.expires_at < now:
             raise ValidationError("Refresh token inválido, revocado o expirado")
 
+        # Hallazgo real de la regresión QA externa, sep-2026: refresh() no
+        # chequeaba is_active del usuario — un usuario desactivado con una
+        # sesión todavía no revocada podía seguir renovando su access
+        # token indefinidamente. UserService.set_active ya revoca las
+        # sesiones activas al desactivar (defensa primaria); este chequeo
+        # es la segunda capa, por si alguna sesión quedó sin revocar por
+        # cualquier otro camino.
+        user_result = await db.execute(select(models.User.is_active).where(models.User.id == session.user_id))
+        user_is_active = user_result.scalar_one_or_none()
+        if not user_is_active:
+            raise ValidationError("Refresh token inválido, revocado o expirado")
+
         # Rotación: se revoca el usado y se emite uno nuevo.
         session.revoked_at = now
         access_token = security.create_access_token(user_id=session.user_id, company_id=company_id)
@@ -368,6 +455,234 @@ class AuthService:
         if session is not None:
             session.revoked_at = datetime.now(timezone.utc)
             await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Recuperación de contraseña (spec 8.0 [core] — hallazgo real de la
+# regresión QA externa, sep-2026: nunca se había construido pese a estar
+# marcado [core]). Mismo patrón cross-tenant que AuthService.login/refresh:
+# el flujo empieza sin conocer company_id, se resuelve vía erp_auth_lookup
+# (BYPASSRLS, columnas concretas), y solo entonces se fija el contexto RLS.
+# ---------------------------------------------------------------------------
+class PasswordResetService:
+    @staticmethod
+    async def request_reset(
+        auth_lookup_db: AsyncSession, db: AsyncSession, *, email: str
+    ) -> None:
+        """Nunca revela si el email existe (mismo criterio que login) — la
+        respuesta al cliente es idéntica exista o no la cuenta; solo
+        cambia si efectivamente se genera un token y se "envía" el email
+        (en este entorno, un log — ver _send_reset_email)."""
+        result = await auth_lookup_db.execute(
+            select(models.User.id, models.User.company_id, models.User.is_active).where(
+                models.User.email == email
+            )
+        )
+        row = result.first()
+        if row is None or not row.is_active:
+            return  # silencioso — no revela existencia del email
+
+        user_id, company_id, _ = row
+
+        from sqlalchemy import text as _text
+
+        await db.execute(
+            _text("SELECT set_config('app.current_company_id', :cid, false)"),
+            {"cid": str(company_id)},
+        )
+
+        raw_token, token_hash = security.generate_password_reset_token()
+        now = datetime.now(timezone.utc)
+        reset_token = models.PasswordResetToken(
+            company_id=company_id,
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=now + timedelta(minutes=settings.password_reset_token_expire_minutes),
+        )
+        db.add(reset_token)
+
+        await AuditService.log_event(
+            db, company_id=company_id, event="auth.password_reset_requested",
+            entity_type="user", entity_id=user_id, user_id=user_id,
+        )
+        await db.commit()
+
+        PasswordResetService._send_reset_email(email, raw_token)
+
+    @staticmethod
+    def _send_reset_email(email: str, raw_token: str) -> None:
+        """DEDUCIBLE (mismo tipo de limitación que EmailSender en
+        notifications — sin acceso de red a un proveedor real de email en
+        este entorno): se loguea, no se envía. `core` no puede importar
+        `app.notifications` (violaría el grafo de dependencias — core no
+        depende de nada, notifications depende de core, no al revés), así
+        que este stub es local, no una reutilización de
+        notifications.EmailSender."""
+        import logging
+
+        logging.getLogger("core.auth.password_reset").info(
+            "EMAIL (dev, no enviado) to=%s subject='Recuperación de contraseña' token=%s",
+            email, raw_token,
+        )
+
+    @staticmethod
+    async def confirm_reset(
+        auth_lookup_db: AsyncSession, db: AsyncSession, *, raw_token: str, new_password: str
+    ) -> None:
+        token_hash = security.hash_password_reset_token(raw_token)
+        now = datetime.now(timezone.utc)
+
+        lookup_result = await auth_lookup_db.execute(
+            select(
+                models.PasswordResetToken.id,
+                models.PasswordResetToken.company_id,
+                models.PasswordResetToken.user_id,
+                models.PasswordResetToken.expires_at,
+                models.PasswordResetToken.used_at,
+            ).where(models.PasswordResetToken.token_hash == token_hash)
+        )
+        lookup_row = lookup_result.first()
+        generic_error = ValidationError("Token de recuperación inválido, expirado o ya usado")
+        if lookup_row is None:
+            raise generic_error
+
+        token_id, company_id, user_id, expires_at, used_at = lookup_row
+        if used_at is not None or expires_at < now:
+            raise generic_error
+
+        from sqlalchemy import text as _text
+
+        await db.execute(
+            _text("SELECT set_config('app.current_company_id', :cid, false)"),
+            {"cid": str(company_id)},
+        )
+
+        token_result = await db.execute(
+            select(models.PasswordResetToken).where(models.PasswordResetToken.id == token_id)
+        )
+        token = token_result.scalar_one_or_none()
+        if token is None or token.used_at is not None or token.expires_at < now:
+            raise generic_error
+
+        user_result = await db.execute(select(models.User).where(models.User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user is None:
+            raise generic_error
+
+        user.hashed_password = security.hash_password(new_password)
+        token.used_at = now
+
+        # Un reset de contraseña invalida toda sesión existente — mismo
+        # criterio que desactivar un usuario (UserService.set_active):
+        # si alguien más tenía acceso con la contraseña vieja, este es el
+        # punto donde se corta.
+        from sqlalchemy import update as _update
+
+        await db.execute(
+            _update(models.UserSession)
+            .where(models.UserSession.user_id == user_id, models.UserSession.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+
+        await AuditService.log_event(
+            db, company_id=company_id, event="auth.password_reset_confirmed",
+            entity_type="user", entity_id=user_id, user_id=user_id,
+        )
+        await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# 2FA / TOTP (spec 8.0 [core] — hallazgo real de la regresión QA externa,
+# sep-2026: nunca se había construido pese a estar marcado [core]).
+# Secreto cifrado en reposo vía pgcrypto — mismo patrón que medical (ver
+# app/medical/services.py _encrypt/_decrypt_col).
+# ---------------------------------------------------------------------------
+class TwoFactorService:
+    @staticmethod
+    def _encrypt_secret(secret: str):
+        from sqlalchemy import func
+
+        return func.pgp_sym_encrypt(secret, settings.pgcrypto_key)
+
+    @staticmethod
+    async def _get_decrypted_secret(db: AsyncSession, *, user_id: int) -> str | None:
+        from sqlalchemy import func
+
+        result = await db.execute(
+            select(func.pgp_sym_decrypt(models.User.totp_secret_encrypted, settings.pgcrypto_key)).where(
+                models.User.id == user_id, models.User.totp_secret_encrypted.is_not(None)
+            )
+        )
+        row = result.first()
+        return row[0] if row is not None else None
+
+    @staticmethod
+    async def _verify_code(db: AsyncSession, *, user: models.User, code: str) -> bool:
+        secret = await TwoFactorService._get_decrypted_secret(db, user_id=user.id)
+        if secret is None:
+            return False
+        return pyotp.TOTP(secret).verify(code, valid_window=1)
+
+    @staticmethod
+    async def setup(db: AsyncSession, *, company_id: int, user: models.User) -> tuple[str, str]:
+        """Genera un secreto nuevo y lo guarda cifrado, todavía sin
+        habilitar (totp_enabled sigue false hasta `confirm`) — evita que
+        un usuario quede bloqueado de su propia cuenta por guardar un
+        secreto que nunca llegó a confirmar que puede leer correctamente
+        en su app autenticadora."""
+        secret = pyotp.random_base32()
+        provisioning_uri = pyotp.TOTP(secret).provisioning_uri(
+            name=user.email, issuer_name=settings.totp_issuer_name
+        )
+
+        from sqlalchemy import update as _update
+
+        await db.execute(
+            _update(models.User)
+            .where(models.User.id == user.id)
+            .values(totp_secret_encrypted=TwoFactorService._encrypt_secret(secret), totp_enabled=False)
+        )
+        await db.commit()
+        return secret, provisioning_uri
+
+    @staticmethod
+    async def confirm(db: AsyncSession, *, company_id: int, user: models.User, code: str) -> None:
+        secret = await TwoFactorService._get_decrypted_secret(db, user_id=user.id)
+        if secret is None:
+            raise ValidationError("No hay un setup de 2FA pendiente — llamá a /auth/2fa/setup primero")
+        if not pyotp.TOTP(secret).verify(code, valid_window=1):
+            raise ValidationError("Código TOTP inválido")
+
+        from sqlalchemy import update as _update
+
+        await db.execute(_update(models.User).where(models.User.id == user.id).values(totp_enabled=True))
+        await AuditService.log_event(
+            db, company_id=company_id, event="auth.2fa_enabled", entity_type="user",
+            entity_id=user.id, user_id=user.id,
+        )
+        await db.commit()
+
+    @staticmethod
+    async def disable(db: AsyncSession, *, company_id: int, user: models.User, password: str) -> None:
+        """Requiere re-confirmar la contraseña — deshabilitar 2FA reduce
+        la seguridad de la cuenta, no debería ser posible solo con un
+        access token robado de una sesión ya abierta."""
+        if not security.verify_password(password, user.hashed_password):
+            raise ValidationError("Contraseña incorrecta")
+
+        from sqlalchemy import update as _update
+
+        await db.execute(
+            _update(models.User)
+            .where(models.User.id == user.id)
+            .values(totp_enabled=False, totp_secret_encrypted=None)
+        )
+        await AuditService.log_event(
+            db, company_id=company_id, event="auth.2fa_disabled", entity_type="user",
+            entity_id=user.id, user_id=user.id,
+        )
+        await db.commit()
+
 
 
 # ---------------------------------------------------------------------------
