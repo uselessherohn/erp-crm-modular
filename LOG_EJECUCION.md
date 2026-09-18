@@ -1881,3 +1881,52 @@ excepciones.
 **Resultado de Fase 0**: sin bloqueantes pendientes. 3 commits de fix aplicados por separado sobre
 `main` (no pusheados a GitHub todavía — este entorno no tiene credenciales de escritura al remoto).
 Lista para arrancar Fase 1 (los 26 módulos, sección 3/5 del spec de regresión).
+
+---
+
+## 2FA, recuperación de contraseña, activar/desactivar usuario (sep-2026)
+
+Instrucción explícita del usuario: tratar los 2 hallazgos de la sección "REGRESIÓN QA EXTERNA"
+anterior (2FA/recuperación de contraseña no construidos, sin forma de desactivar un usuario) como
+aspectos que requieren corrección, no solo documentación — aunque el detalle real es que sí están
+marcados **[core]** en `spec_erp_crm_v10_4.md` sección 8.0 (confirmado con la spec real, adjuntada
+recién en esta sesión), así que en rigor no eran opcionales.
+
+Migración `6f6e78cc5e26`. Detalle completo de qué se construyó y por qué en STATE.md sección 0.2 —
+no se repite acá. Tres bugs relacionados encontrados en el camino, además de la feature en sí:
+
+1. `AuthService.refresh` no chequeaba `is_active` — un usuario desactivado con sesión sin revocar
+   podía renovar su token para siempre. Corregido (segunda capa, además de la revocación explícita
+   en `set_active`).
+2. Sin `logging.basicConfig()` en ningún lado de la app, el logger raíz queda en `WARNING` sin
+   handlers — cualquier `.info()` se descarta en silencio. Afectaba también a
+   `notifications.LoggingEmailSender` (invisible hasta ahora porque los tests inyectan un
+   `_FakeEmailSender`). Corregido en `app/main.py`.
+3. (Propio, no de la app) mi primer test de 2FA falló por comparar el email sin URL-encodear contra
+   el `provisioning_uri` de `pyotp` (que sí lo encodea correctamente, `@` → `%40`) — bug de la
+   aserción del test, no de la implementación.
+
+Probado con `curl` real contra el servidor real, los tres flujos completos de punta a punta,
+incluyendo caminos de error:
+
+- **2FA**: setup → login normal sigue andando (2FA no habilitado hasta confirmar) → confirm con
+  código incorrecto falla → confirm con código real (`pyotp.TOTP(secret).now()`) → login sin código
+  da `422` con `requires_2fa: true` → login con código incorrecto falla → login con código correcto
+  funciona → disable con password incorrecta falla → disable con password correcta → login vuelve a
+  ser normal, sin código.
+- **Recuperación de contraseña**: request para email inexistente da `202` igual (no revela nada) →
+  request real, token capturado del log (`grep EMAIL`) → confirm con token inválido falla → confirm
+  con token real → reintentar el mismo token falla (un solo uso) → login con password vieja falla →
+  login con password nueva funciona.
+- **Activar/desactivar**: admin intenta autodesactivarse → falla → admin desactiva a un empleado →
+  desactivar de nuevo (idempotente, mismo `updated_at`, no reescribe) → login del empleado
+  desactivado falla → refresh con su token viejo falla (sesión revocada) → reactivar → login vuelve
+  a funcionar.
+
+16 tests nuevos en `test_core_module.py` (a nivel de servicio, mismo estilo que el resto del
+archivo), suite completa 189/189 sin regresiones.
+
+**Alcance dejado explícitamente fuera** (documentado, no implementado): rate-limiting específico
+para fuerza bruta de código TOTP (el contador de `failed_login_attempts` sigue siendo solo de
+contraseña); deshabilitar el 2FA de otro usuario (permiso administrativo aparte, no construido —
+2FA es self-service únicamente en este cierre).

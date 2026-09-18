@@ -329,6 +329,15 @@ entorno real en cada cierre en vez de confiar en la revisión de código:
   `alembic upgrade head` corrió contra una base completamente limpia; la
   primera bloqueaba la migración siempre, la segunda habría roto el
   cifrado clínico en el primer uso real.
+- **2FA y recuperación de contraseña — marcados `[core]` en la spec
+  (sección 8.0), nunca construidos, y esa omisión nunca quedó registrada**
+  como decisión ni TODO. Encontrado y cerrado en la misma sesión de
+  regresión QA externa (sep-2026): TOTP real (`pyotp`, secreto cifrado
+  con `pgcrypto`), recuperación de contraseña de un solo uso, y —
+  relacionado — activar/desactivar usuario (tampoco existía). De paso,
+  se encontró que la app entera no tenía `logging.basicConfig()`, así
+  que el "envío" de email por log (`notifications.LoggingEmailSender`
+  incluido) nunca se veía en ningún lado.
 
 Todos estos hallazgos, con el detalle completo de cómo se reprodujeron y
 corrigieron, están documentados en `LOG_EJECUCION.md`.

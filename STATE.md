@@ -94,6 +94,80 @@ consumidores reales en `app/accounting/routers.py` y
 un hallazgo nuevo — solo la primera confirmación por lectura de código
 de que el TODO ya estaba resuelto en la práctica.
 
+## 0.2 2FA, recuperación de contraseña y activar/desactivar usuario — gap real cerrado (sep-2026)
+
+Instrucción explícita del usuario tras el hallazgo de la sección 0.1:
+aunque no bloqueaban el DoD original (spec 8.0 los marca **[core]**, no
+[extendido], así que en rigor sí lo bloqueaban — la discrepancia es que
+nunca se habían construido y esa omisión nunca quedó registrada como
+decisión ni como TODO), se trataron como aspectos que requieren
+corrección, no solo documentación.
+
+**Confirmado contra `spec_erp_crm_v10_4.md` sección 8.0** (texto literal):
+"Autenticación y Seguridad **[core]**: login, 2FA, recuperación de
+contraseña, sesiones activas, JWT/OAuth2, política de contraseñas,
+bloqueo por intentos." Al cierre original del módulo 1 se construyó
+login/JWT/sesiones/bloqueo, pero 2FA y recuperación de contraseña no —
+sin que STATE.md lo registrara como decisión DEDUCIBLE/AMBIGUO ni como
+TODO diferido, simplemente no están. Activar/desactivar usuario no está
+tan explícito en la spec, pero "Gestión de Usuarios [core]: perfiles,
+**estados**..." lo implica, y no existía ningún endpoint para eso
+(`UserRead.is_active` era de solo lectura, sin `UserUpdate`).
+
+**Construido en la migración `6f6e78cc5e26`** (ver esa migración y
+`app/core/services.py` para el detalle línea por línea):
+
+- **2FA (TOTP)**: `TwoFactorService.setup/confirm/disable`, secreto
+  generado con `pyotp`, cifrado en reposo con `pgcrypto`
+  (`pgp_sym_encrypt`/`pgp_sym_decrypt`, mismo patrón exacto que `medical`
+  — ver `app/medical/services.py`). `AuthService.login` exige
+  `totp_code` cuando `user.totp_enabled=true`; sin código devuelve
+  `422` con `details={"requires_2fa": true}` para que el cliente sepa
+  pedirlo. `setup` no habilita 2FA hasta `confirm` (evita que un usuario
+  quede bloqueado por un secreto que nunca confirmó poder leer).
+  `disable` exige re-confirmar la contraseña.
+- **Recuperación de contraseña**: `PasswordResetService.request_reset/
+  confirm_reset`, mismo patrón cross-tenant que login/refresh (tabla
+  `password_reset_tokens`, token de un solo uso hasheado con sha256,
+  resuelto vía `erp_auth_lookup` sin conocer `company_id` de antemano).
+  `request_reset` nunca revela si el email existe (mismo criterio que
+  login). Confirmar el reset revoca todas las sesiones activas del
+  usuario (igual que desactivar). El "envío" de email es un log local a
+  `core` (no importa `app.notifications` — violaría el grafo de
+  dependencias, `core` no depende de nada).
+- **Activar/desactivar usuario**: `UserService.set_active`, `PATCH
+  /users/{id}/status`, permiso nuevo `core:user:update_status`.
+  Idempotente (desactivar dos veces no es error ni reescribe). Bloquea
+  autodesactivación. Al desactivar, revoca de inmediato todas las
+  sesiones activas (refresh tokens) del usuario — el access token JWT ya
+  emitido sigue válido en tránsito, pero `get_current_user` re-chequea
+  `is_active` en cada request, así que la ventana de exposición real es
+  como máximo `jwt_access_token_expire_minutes`, nunca indefinida.
+
+**Bug relacionado encontrado y corregido en el camino**: `AuthService.refresh`
+no chequeaba `is_active` del usuario — un usuario desactivado con una
+sesión todavía no revocada podía seguir renovando su access token para
+siempre. Ahora chequea explícitamente (segunda capa de defensa, además de
+la revocación de sesiones en `set_active`).
+
+**Segundo bug relacionado, no introducido por este cierre pero encontrado
+al probarlo**: no había ningún `logging.basicConfig()` en la app — el
+logger raíz de Python queda en `WARNING` sin handlers por default, así
+que cualquier `logger.info()` se descarta en silencio. Esto ya afectaba a
+`notifications.LoggingEmailSender` (nunca detectado porque
+`test_notifications_module.py` inyecta un `_FakeEmailSender` de test, no
+ejercita el logger real) y hubiera afectado igual al nuevo log de
+password-reset. Corregido en `app/main.py` con
+`logging.basicConfig(level=logging.INFO)`.
+
+Probado de tres formas: 16 tests nuevos en `test_core_module.py` (a nivel
+de servicio), la suite completa (189/189, sin regresiones), y
+manualmente end-to-end contra el servidor real con `curl` — los tres
+flujos completos, incluyendo los caminos de error (token/código
+incorrecto, reintento de token de un solo uso, autodesactivación
+bloqueada, refresh revocado). Detalle completo de la sesión de `curl` en
+LOG_EJECUCION.md.
+
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
@@ -141,6 +215,18 @@ de que el TODO ya estaba resuelto en la práctica.
   uniforme `{"error": {"code","message","details"}}` — **para TODO error,
   incluyendo 422 de Pydantic y 404/405 nativos de Starlette** (handlers
   agregados en el cierre de `contacts`, ver DED-04 abajo).
+- **2FA, recuperación de contraseña, activar/desactivar usuario — cerrados
+  en la sesión de regresión QA externa (sep-2026, migración `6f6e78cc5e26`)**:
+  ver sección 0.2 para el detalle completo de por qué faltaban y cómo se
+  construyeron. Resumen: `TwoFactorService` (TOTP real vía `pyotp`, secreto
+  cifrado con `pgcrypto`, mismo patrón que `medical`), `PasswordResetService`
+  (token de un solo uso, mismo patrón cross-tenant que login/refresh),
+  `UserService.set_active` (idempotente, revoca sesiones activas al
+  desactivar, bloquea autodesactivación). `AuthService.refresh` corregido
+  para chequear `is_active` (bug relacionado: antes un usuario desactivado
+  podía seguir renovando su token indefinidamente). 16/16 tests nuevos en
+  `test_core_module.py`, probado también end-to-end contra el servidor
+  real (`curl`, ver LOG_EJECUCION.md).
 
 ### Módulo 2 — contacts
 - Entidad `Contact` (spec 2.3): flags `is_customer`/`is_vendor`/
