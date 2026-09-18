@@ -1930,3 +1930,29 @@ archivo), suite completa 189/189 sin regresiones.
 para fuerza bruta de código TOTP (el contador de `failed_login_attempts` sigue siendo solo de
 contraseña); deshabilitar el 2FA de otro usuario (permiso administrativo aparte, no construido —
 2FA es self-service únicamente en este cierre).
+
+---
+
+## contacts: credit_limit escribible, búsqueda por email/tax_id, unicidad de email (sep-2026)
+
+Instrucción explícita del usuario: mismo criterio que con `core` — los 3 gaps reales del módulo 2
+encontrados en la Fase 1 de la regresión QA externa se tratan como corrección, no solo hallazgo
+documentado. Migración `ea97b3b319d5`. Detalle completo en STATE.md módulo 2 — no se repite acá.
+
+Al probar el fix de email duplicado con un script manual reutilizando una sola sesión de SQLAlchemy
+para varios pasos (crear contacto A, intentar duplicado, seguir usando el objeto A), apareció
+`sqlalchemy.exc.MissingGreenlet` al tocar `c1.id` después del `rollback()` del intento fallido — el
+rollback expira TODOS los objetos de la sesión, no solo el que falló, y tocar un atributo expirado
+fuera de un contexto async correctamente awaited revienta. Confirmado que esto NO es un bug de la
+app: cada request HTTP real tiene su propia sesión vía `Depends(get_db_with_tenant_context)`, así que
+nunca comparte sesión entre un create exitoso y uno fallido. Se documenta como advertencia para
+scripts/workers que sí reutilicen sesiones entre pasos. Reintentado con sesiones separadas (como
+sería un request real) y los 3 fixes funcionan correctamente:
+
+- Email duplicado en la misma compañía → `ConflictError` (409), no 500 crudo.
+- Dos contactos sin email → ambos se crean sin problema (índice único parcial, `WHERE email IS NOT
+  NULL`).
+- Búsqueda por email exacto y por `tax_id` → encuentra el contacto (antes: 0 resultados).
+- `ContactService.update_credit_limit` → setea y también limpia (`None`) el límite de crédito.
+
+4 tests nuevos en `test_contacts_module.py` (10/10 aislado), suite completa 193/193 sin regresiones.

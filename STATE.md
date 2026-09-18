@@ -236,6 +236,32 @@ LOG_EJECUCION.md.
   `model_validator`, no bug de codegen).
 - Búsqueda: operador trigram `%` (usa `ix_contacts_name_trgm`, GIN +
   `pg_trgm`) — verificado tolerando typos y falta de tildes.
+- **3 hallazgos reales confirmados en la regresión QA externa (sep-2026)
+  — cerrados en la migración `ea97b3b319d5`**:
+  1. **`credit_limit` ahora tiene endpoint propio**: `PATCH
+     /contacts/{id}/credit-limit`, permiso separado
+     `contacts:contact:update_credit_limit` (campo financiero sensible,
+     mismo criterio que separar `hr:employee:read-sensitive` del resto
+     de lectura de empleado). `ContactService.update_credit_limit`.
+  2. **`ContactService.list_contacts` ahora busca también por `email` y
+     `tax_id`** (ILIKE — son identificadores exactos, no texto libre, no
+     tiene sentido aplicarles trigram fuzzy como a `name`).
+  3. **Email único por compañía** (DEDUCIBLE nuevo — a diferencia de
+     `users.email`, que es único GLOBAL, AMB-01): índice único parcial
+     `ux_contacts_company_email` `WHERE email IS NOT NULL` — dos
+     contactos sin email no chocan entre sí. `ContactService.
+     create_contact`/`update_contact` capturan el `IntegrityError` y lo
+     traducen a `ConflictError` (409), no un 500 crudo.
+  4 tests nuevos en `test_contacts_module.py` (10/10), probado también
+  con sesiones separadas simulando el patrón real de requests HTTP
+  independientes (ver LOG_EJECUCION.md — el primer intento de probarlo a
+  mano con una sola sesión compartida expuso un footgun real de
+  SQLAlchemy async: tras un `rollback()`, los objetos ya comprometidos de
+  la MISMA sesión quedan expirados y tocarlos sin `await` explícito
+  revienta con `MissingGreenlet` — no aplica a producción porque cada
+  request tiene su propia sesión vía `Depends`, pero se documenta por si
+  alguna vez se reutiliza una sesión entre pasos, como en un script o un
+  worker).
 
 ### Módulo 3 — inventory (subset [core] de spec 8.1)
 - Entidades: `Category`, `Warehouse`, `Product`, `Lot`, `StockMovement`
