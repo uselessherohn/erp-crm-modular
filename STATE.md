@@ -584,6 +584,21 @@ spec 7.1) — **Fases 1-4 completas**
   bug determinístico (mismo código, a veces pasa a veces no en la misma
   sesión). Documentado como límite estructural conocido del enfoque de
   integración real sin fixtures aisladas ni entorno dedicado por test.
+- **Regresión QA externa (sep-2026)**: `tests/test_pipeline_module.py`
+  no existía (mismo gap que `accounting`, sin discrepancia documentada
+  esta vez — STATE.md ya decía "verificado end-to-end" refiriéndose a
+  una verificación manual por `curl`, no a un test persistido). Escrito
+  desde cero, 10 casos: etapa no puede ser ganada Y perdida a la vez,
+  crear oportunidad sobre `Contact` existente + movimiento libre entre
+  etapas no terminales (ida y vuelta), no se puede crear directo en
+  etapa terminal, no se puede mover directo a etapa terminal (exige
+  `close_won`/`close_lost`), cierre ganado/perdido solo por comando
+  explícito, **mover una oportunidad ya cerrada (ganada Y perdida, los 2
+  casos) → rechazado**, reabrir vuelve a `open` en la primera etapa no
+  terminal y limpia `closed_at`/`lost_reason`, actividad de otra
+  compañía nunca visible, RLS. **Los 10 casos pasaron en el primer
+  intento real, sin bugs encontrados.** 10/10, 222/222 en la suite
+  completa.
 
 ### Módulo 8 — hr (spec 8.1, subset [core]) — **Fases 1-4 completas**
 - Alcance: Legajo, Estructura Organizacional, Jerarquías. [extendido]

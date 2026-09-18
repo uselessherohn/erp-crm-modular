@@ -2038,3 +2038,24 @@ ya estaba bien construido de las sesiones anteriores; el gap era pura falta de c
 persistida en el repo, no lógica rota.
 
 212/212 en la suite completa.
+
+---
+
+## pipeline: test_pipeline_module.py escrito desde cero (sep-2026)
+
+Mismo gap que accounting: el archivo de test no existía. A diferencia de accounting, aquí STATE.md
+nunca afirmó lo contrario — la verificación "end-to-end" documentada era manual (curl contra el
+servidor real), no un test persistido.
+
+10 casos escritos desde cero, cubriendo el checklist del catálogo módulo 7: etapa no puede ser
+ganada+perdida a la vez; crear oportunidad sobre Contact existente y moverla libremente entre etapas
+no terminales (ida y vuelta); no se puede crear directo en etapa terminal ni moverse directo a una
+(exige close_won/close_lost); cierre ganado/perdido solo por comando explícito; mover una oportunidad
+YA CERRADA rechazado, para los 2 casos (ganada y perdida) — el catálogo pedía explícitamente cubrir
+ambos, no solo uno; reabrir vuelve a open en la primera etapa no terminal configurada y limpia
+closed_at/lost_reason, y un segundo reopen sobre una ya abierta se rechaza; actividad de otra
+compañía nunca visible ni asociable; RLS cross-tenant en Opportunity.
+
+Los 10 casos pasaron en el primer intento real, sin ningún bug encontrado.
+
+222/222 en la suite completa.
