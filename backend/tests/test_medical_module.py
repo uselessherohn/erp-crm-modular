@@ -1261,3 +1261,78 @@ async def test_ensure_public_booking_active_blocks_suspended(db, company):
 
     with pytest.raises(PackageSuspendedError):
         await ensure_public_booking_active(db, company_id=company.id)
+
+
+# ---------------------------------------------------------------------------
+# Hallazgos reales de la regresión QA externa (sep-2026)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_create_appointment_with_nonexistent_professional_rejected_cleanly(db, company, patient):
+    """Catálogo módulo 9: 'Crear cita con professional_user_id que no
+    existe → rechazado'. Bug real confirmado antes del fix: no daba un
+    rechazo limpio, sino un IntegrityError crudo de Postgres
+    (ForeignKeyViolationError, con el SQL y los parámetros incluidos en
+    el mensaje). Corregido con _get_professional_or_raise, mismo patrón
+    que _get_patient_or_raise."""
+    with pytest.raises(NotFoundError):
+        await AppointmentService.create(
+            db, company_id=company.id,
+            payload=_appt_payload(patient.id, 999999, _BASE, _BASE + timedelta(minutes=30)),
+            created_by=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_public_booking_with_nonexistent_professional_rejected_with_public_message(db, company):
+    """Mismo bug que arriba, pero en el widget PÚBLICO (sin JWT) — más
+    grave ahí: un IntegrityError crudo filtrado a un usuario anónimo de
+    internet es una fuga de información real, no solo un mal UX. El
+    docstring de PublicBookingService afirmaba (incorrectamente) que
+    reutilizaba AppointmentService.create — no lo hacía, duplicaba la
+    lógica con el mismo bug. Corregido con su propio mensaje orientado
+    al público (nunca el interno de _get_professional_or_raise)."""
+    with pytest.raises(ValidationError) as exc_info:
+        await PublicBookingService.create(
+            db, company_id=company.id,
+            payload=medical_schemas.PublicBookingCreate(
+                professional_user_id=999999, scheduled_start=_BASE, scheduled_end=_BASE + timedelta(minutes=30),
+                patient_name="Anónimo", patient_email="anon@test.hn",
+            ),
+        )
+    assert "no encontrado" not in str(exc_info.value).lower()  # nunca el mensaje interno
+    assert "no está activo" not in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_public_busy_slot_schema_structurally_cannot_leak_phi(db):
+    """Catálogo módulo 15: 'GET .../busy-slots — confirmar que la
+    respuesta NUNCA incluye nombre de paciente, motivo de consulta, ni
+    ningún dato más allá del rango horario'. El router usa
+    response_model=list[PublicBusySlot], así que FastAPI filtra
+    cualquier campo extra automáticamente — este test es un guardrail de
+    regresión: si alguna vez alguien agrega un campo a PublicBusySlot
+    sin darse cuenta de la implicación de seguridad, este test lo
+    atrapa."""
+    assert set(medical_schemas.PublicBusySlot.model_fields.keys()) == {"scheduled_start", "scheduled_end"}
+
+
+@pytest.mark.asyncio
+async def test_ensure_public_booking_active_only_medical_active_without_web(db, company):
+    """Catálogo módulo 15: las 4 combinaciones — esta es 'solo el otro'
+    (medical activo, web nunca contratado), complementaria a la ya
+    existente 'solo web' en test_ensure_public_booking_active_requires_both_web_and_medical."""
+    db.add(core_models.CompanyPackage(company_id=company.id, package="medical", status=core_models.PackageStatusEnum.active))
+    await db.commit()
+    with pytest.raises(PackageNotLicensedError):
+        await ensure_public_booking_active(db, company_id=company.id)
+
+
+@pytest.mark.asyncio
+async def test_ensure_public_booking_active_both_suspended(db, company):
+    """Catálogo módulo 15: 'ambos suspendidos' — la combinación que
+    faltaba (antes solo se probó uno suspendido + el otro activo)."""
+    db.add(core_models.CompanyPackage(company_id=company.id, package="web", status=core_models.PackageStatusEnum.suspended))
+    db.add(core_models.CompanyPackage(company_id=company.id, package="medical", status=core_models.PackageStatusEnum.suspended))
+    await db.commit()
+    with pytest.raises(PackageSuspendedError):
+        await ensure_public_booking_active(db, company_id=company.id)

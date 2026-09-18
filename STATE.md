@@ -1091,6 +1091,38 @@ spec 7.1) — **Fases 1-4 completas**
 > 4. ~~Decidir y construir la superficie de frontend real (a diferencia de
 >    `medical` 9-14, este módulo no tiene página interna propia).~~
 
+> **Regresión QA externa (sep-2026), módulos 9-15 completos**: suite
+> existente (47/47) corrida aislada, sin cambios — cubre casi todo el
+> catálogo (versionado de expediente, traslape exacto en el borde,
+> auditoría de lectura con `correlation_id`, ambos modos de facturación
+> médica, ambos casos de receta con/sin Farmacéutico, proveedor
+> inyectado de teleconsulta, notificación real cross-módulo del portal).
+> 2 bugs reales encontrados y corregidos:
+> 1. **Crear una cita con `professional_user_id` inexistente no
+>    rechazaba limpio** — daba un `IntegrityError` crudo de Postgres
+>    (`ForeignKeyViolationError`, SQL y parámetros incluidos en el
+>    mensaje), sin capturar. Afectaba TANTO a `AppointmentService.create`
+>    (ruta autenticada) COMO a `PublicBookingService.create` (widget
+>    público, sin JWT — más grave ahí, es una fuga de información real a
+>    cualquiera en internet). Corregido con `_get_professional_or_raise`
+>    (mismo patrón que `_get_patient_or_raise`), con mensaje interno en
+>    la ruta autenticada y mensaje orientado al público en el widget.
+> 2. **Docstring de `PublicBookingService` incorrecto**: afirmaba que
+>    `create()` "reutiliza `AppointmentService.create`" — nunca fue
+>    cierto, duplica la lógica de creación (STATE.md, más abajo en esta
+>    misma sección, ya lo describía correctamente como "construye el
+>    Appointment directamente"; el error estaba solo en el comentario
+>    del código). Corregido el docstring.
+>
+> Más 3 huecos de cobertura cerrados sin bugs: las 2 combinaciones de
+> `web`/`medical` suspendido/activo que faltaban del catálogo ("solo
+> medical activo" y "ambos suspendidos"), y un guardrail de regresión
+> que confirma que `PublicBusySlot` (spec: nunca debe filtrar PHI) solo
+> tiene los 2 campos de rango horario — si alguna vez alguien le agrega
+> un campo sin pensar en la implicación de seguridad, este test lo
+> atrapa. 5 tests nuevos, 52/52 en el archivo, 240/240 en la suite
+> completa.
+
 - **Última pieza de la tabla de módulos de Médico** — `depende_de: [9,
   22]` (Agenda Médica + `website`). Ya no estaba bloqueado desde que se
   cerró `website` (módulo 22); se construye en esta sesión.

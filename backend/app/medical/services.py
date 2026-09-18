@@ -55,6 +55,26 @@ async def _get_patient_or_raise(db: AsyncSession, *, company_id: int, patient_co
     return contact
 
 
+async def _get_professional_or_raise(db: AsyncSession, *, company_id: int, professional_user_id: int):
+    """Hallazgo real de la regresión QA externa (sep-2026): antes de esto,
+    crear una cita con un `professional_user_id` inexistente (o de OTRA
+    compañía — `professional_user_id` es un FK global a `users.id`, sin
+    scoping de tenant en el constraint) no daba un 404 limpio, sino un
+    `IntegrityError` crudo de Postgres (`ForeignKeyViolationError`) sin
+    capturar, con el SQL y los parámetros completos en el mensaje —
+    confirmado reproduciéndolo directamente. Mismo patrón que
+    `_get_patient_or_raise`."""
+    from app.core.models import User
+
+    result = await db.execute(select(User).where(User.company_id == company_id, User.id == professional_user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise NotFoundError(f"Profesional (user_id={professional_user_id}) no encontrado en esta compañía")
+    if not user.is_active:
+        raise ValidationError(f"El profesional (user_id={professional_user_id}) no está activo")
+    return user
+
+
 async def _professional_has_treated(db: AsyncSession, *, company_id: int, professional_user_id: int, patient_contact_id: int) -> bool:
     """"own patients" (RBAC clínico) — el actor tiene al menos una cita con
     ese paciente, sin importar el estado de la cita."""
@@ -172,6 +192,7 @@ class AppointmentService:
         db: AsyncSession, *, company_id: int, payload: schemas.AppointmentCreate, created_by: int | None
     ) -> models.Appointment:
         await _get_patient_or_raise(db, company_id=company_id, patient_contact_id=payload.patient_contact_id)
+        await _get_professional_or_raise(db, company_id=company_id, professional_user_id=payload.professional_user_id)
 
         appointment = models.Appointment(
             company_id=company_id,
@@ -1036,12 +1057,24 @@ class PatientMessageService:
 # Módulo 15 — Reserva Pública de Citas
 # ---------------------------------------------------------------------------
 class PublicBookingService:
-    """Widget embebible sin JWT (spec 8.2/8.4). Reutiliza
-    `AppointmentService.create` para el bloqueo de horario real
-    (`EXCLUDE USING gist`, DED-26) en vez de duplicar esa lógica — el
-    único trabajo propio de este servicio es (1) no filtrar PHI en la
-    consulta de disponibilidad y (2) resolver/crear el `Contact` del
-    paciente sin que tenga cuenta previa."""
+    """Widget embebible sin JWT (spec 8.2/8.4). El único trabajo propio
+    de este servicio es (1) no filtrar PHI en la consulta de
+    disponibilidad y (2) resolver/crear el `Contact` del paciente sin
+    que tenga cuenta previa.
+
+    CORRECCIÓN (sep-2026, regresión QA externa): este docstring afirmaba
+    que `create()` "reutiliza AppointmentService.create" — era falso, el
+    método duplicaba la lógica de creación de cita sin llamarlo. Esa
+    duplicación tenía el mismo bug real que `AppointmentService.create`
+    tenía antes de esta misma sesión: crear una reserva con
+    `professional_user_id` inexistente no daba un rechazo limpio, sino
+    un `IntegrityError` crudo de Postgres (SQL y parámetros incluidos)
+    — más grave acá que en la ruta autenticada, porque esta es una ruta
+    PÚBLICA, sin JWT, expuesta a cualquiera en internet. Corregido
+    llamando a `_get_professional_or_raise` antes de intentar el
+    INSERT, con el mensaje orientado al público (nunca el interno de
+    `AppointmentService`, mismo criterio que el mensaje de traslape de
+    acá abajo)."""
 
     @staticmethod
     async def list_busy_slots(
@@ -1089,6 +1122,14 @@ class PublicBookingService:
     async def create(
         db: AsyncSession, *, company_id: int, payload: schemas.PublicBookingCreate
     ) -> models.Appointment:
+        try:
+            await _get_professional_or_raise(db, company_id=company_id, professional_user_id=payload.professional_user_id)
+        except (NotFoundError, ValidationError) as exc:
+            # Mensaje orientado al público — nunca el interno
+            # ("no encontrado en esta compañía", "no está activo"),
+            # mismo criterio que el mensaje de traslape más abajo.
+            raise ValidationError("Ese profesional no está disponible para reservas") from exc
+
         patient = await PublicBookingService._find_or_create_patient_contact(
             db, company_id=company_id, name=payload.patient_name, email=payload.patient_email, phone=payload.patient_phone,
         )

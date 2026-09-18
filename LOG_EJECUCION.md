@@ -2112,3 +2112,41 @@ servicio) — mismo patrón que el enmascarado de lectura DED-21 y que contacts:
 update_credit_limit del módulo 2.
 
 6 tests nuevos (13/13 en test_hr_module.py), 235/235 en la suite completa.
+
+---
+
+## medical (módulos 9-15): 2 bugs reales — professional_user_id inexistente filtraba IntegrityError crudo (sep-2026)
+
+Suite existente (47/47) corrida aislada — cobertura ya muy completa (versionado de expediente,
+traslape exacto en el borde ya probado antes, auditoría de lectura, ambos modos de facturación,
+ambos casos de receta, proveedor inyectado de teleconsulta, notificación cross-módulo real del
+portal). No existe `test_cross_module_regression.py` en este repo — el catálogo lo menciona
+condicionalmente ("si existe"), así que no es una sorpresa, solo confirma su ausencia.
+
+2 bugs reales encontrados al probar el catálogo módulo 9 ("Crear cita con professional_user_id que
+no existe → rechazado") — reproducido primero con un script directo antes de tocar código,
+confirmando la excepción real:
+
+```
+sqlalchemy.exc.IntegrityError: ForeignKeyViolationError: insert or update on table "appointments"
+violates foreign key constraint "appointments_professional_user_id_fkey" ... [SQL: INSERT INTO...]
+```
+
+1. `AppointmentService.create` no validaba que `professional_user_id` existiera antes de intentar el
+   INSERT — el FK real a `users.id` sí existía en la base, pero el error no estaba capturado/traducido
+   (a diferencia del traslape, que sí tiene su except específico). Corregido con
+   `_get_professional_or_raise`, mismo patrón que `_get_patient_or_raise` ya usado en el archivo.
+2. `PublicBookingService.create` (widget público, sin JWT) tenía el MISMO bug, más grave ahí por ser
+   una ruta anónima expuesta a internet — un `IntegrityError` crudo con SQL/parámetros es una fuga de
+   información real. Además, su propio docstring afirmaba falsamente que "reutiliza
+   `AppointmentService.create`" — nunca fue cierto, duplica la lógica (STATE.md ya lo describía bien
+   en otra parte de la misma sección; el error estaba solo en el comentario del código). Corregido con
+   el mismo helper, pero envuelto en un mensaje orientado al público, nunca el interno.
+
+3 huecos de cobertura cerrados sin bugs: 2 combinaciones de `web`/`medical` que faltaban del checklist
+de 4 del catálogo módulo 15 ("solo medical, sin web" y "ambos suspendidos" — antes solo se habían
+probado "ninguno", "solo web" y "uno suspendido+otro activo"), y un guardrail nuevo que confirma por
+código que `PublicBusySlot` (el schema de la ruta pública de disponibilidad) solo expone
+`scheduled_start`/`scheduled_end` — nunca PHI, ni por descuido futuro.
+
+5 tests nuevos, 52/52 en `test_medical_module.py`, 240/240 en la suite completa.
