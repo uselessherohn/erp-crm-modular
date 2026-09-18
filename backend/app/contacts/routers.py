@@ -56,3 +56,20 @@ async def update_contact(
         db, company_id=company_id, contact_id=contact_id, payload=payload, updated_by=actor.id
     )
     return schemas.ContactRead.model_validate(contact)
+
+
+@router.patch("/{contact_id}/credit-limit", response_model=schemas.ContactRead)
+async def update_contact_credit_limit(
+    contact_id: int,
+    payload: schemas.ContactCreditLimitUpdate,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("contacts:contact:update_credit_limit")),
+) -> schemas.ContactRead:
+    """Hallazgo real de la regresión QA externa, sep-2026: `credit_limit`
+    no tenía ningún endpoint de escritura. Separado del PATCH general —
+    permiso propio, campo financiero sensible."""
+    contact = await ContactService.update_credit_limit(
+        db, company_id=company_id, contact_id=contact_id, credit_limit=payload.credit_limit, updated_by=actor.id
+    )
+    return schemas.ContactRead.model_validate(contact)

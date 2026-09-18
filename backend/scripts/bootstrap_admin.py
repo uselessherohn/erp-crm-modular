@@ -30,6 +30,10 @@ async def bootstrap():
             models.Permission(code="contacts:contact:list", description="Listar contactos"),
             models.Permission(code="contacts:contact:read", description="Ver un contacto"),
             models.Permission(code="contacts:contact:update", description="Editar contactos"),
+            models.Permission(
+                code="contacts:contact:update_credit_limit",
+                description="Editar el límite de crédito de un contacto (campo financiero sensible, hallazgo real sep-2026)",
+            ),
             models.Permission(code="inventory:category:create", description="Crear categorías"),
             models.Permission(code="inventory:category:list", description="Listar categorías"),
             models.Permission(code="inventory:warehouse:create", description="Crear almacenes"),
