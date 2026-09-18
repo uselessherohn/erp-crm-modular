@@ -331,3 +331,89 @@ async def test_rls_blocks_cross_tenant_sales_order_read(db):
     await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_b.id)})
     with pytest.raises(NotFoundError):
         await SalesOrderService.get(db, company_id=company_b.id, order_id=order_a.id)
+
+
+@pytest.mark.asyncio
+async def test_credit_control_blocks_confirm_and_unblocks_on_limit_raise(db, company, customer, warehouse, product):
+    """Motor de Contención Financiera (DED-12) integrado en
+    SalesOrderService.confirm() — README.md lo lista como "verificado
+    end-to-end" pero no existía NINGÚN test que lo reprodujera (ni acá
+    ni en accounting — no hay test_accounting_module.py). Hallazgo real
+    de la regresión QA externa, sep-2026: se escribe el test que faltaba,
+    con el flujo completo: bloqueo por crédito excedido → confirmar
+    sigue bloqueado tras subir el límite pero no lo suficiente →
+    desbloqueo real al subir el límite lo suficiente (vía
+    ContactService.update_credit_limit, el endpoint que tampoco existía
+    hasta el cierre del módulo 2 de esta misma regresión)."""
+    from app.core import models as core_models
+    from app.accounting import models as accounting_models
+    from datetime import date
+
+    # El hook de contención financiera solo se evalúa si 'administrative'
+    # está activo para la compañía (acoplamiento flojo intencional).
+    db.add(core_models.CompanyPackage(company_id=company.id, package="administrative", status="active"))
+    await db.flush()
+
+    await _stock_in(db, company.id, product.id, warehouse.id, Decimal(100))
+
+    # Cliente con límite de crédito bajo y una factura posted que ya lo excede.
+    await ContactService.update_credit_limit(db, company_id=company.id, contact_id=customer.id, credit_limit=Decimal(500), updated_by=None)
+    db.add(accounting_models.Invoice(
+        company_id=company.id, number="FV-TEST-0001", direction="sale", contact_id=customer.id,
+        status="posted", issue_date=date.today(), total=Decimal(1000), balance_due=Decimal(1000),
+    ))
+    await db.commit()
+
+    order = await SalesOrderService.create_draft(
+        db, company_id=company.id,
+        payload=schemas.SalesOrderCreate(
+            customer_id=customer.id, warehouse_id=warehouse.id,
+            lines=[schemas.SalesOrderLineCreate(product_id=product.id, quantity=Decimal(10), unit_price=Decimal(10))],
+        ),
+        created_by=None,
+    )
+
+    # Bloqueado: saldo (1000) > límite (500).
+    with pytest.raises(ConflictError):
+        await SalesOrderService.confirm(db, company_id=company.id, order_id=order.id, actor_id=None)
+
+    # Subir el límite, pero no lo suficiente (600 < 1000) — sigue bloqueado.
+    await ContactService.update_credit_limit(db, company_id=company.id, contact_id=customer.id, credit_limit=Decimal(600), updated_by=None)
+    with pytest.raises(ConflictError):
+        await SalesOrderService.confirm(db, company_id=company.id, order_id=order.id, actor_id=None)
+
+    # Subir el límite lo suficiente (1500 > 1000) — desbloquea de verdad.
+    await ContactService.update_credit_limit(db, company_id=company.id, contact_id=customer.id, credit_limit=Decimal(1500), updated_by=None)
+    order = await SalesOrderService.confirm(db, company_id=company.id, order_id=order.id, actor_id=None)
+    assert order.status == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_credit_control_skipped_when_administrative_package_inactive(db, company, customer, warehouse, product):
+    """Acoplamiento flojo intencional (spec, DED-12): si 'administrative'
+    NO está activo para la compañía, sales sigue funcionando standalone,
+    sin evaluar contención financiera — aunque el cliente tenga saldo
+    vencido/excedido. Tampoco tenía test."""
+    from app.accounting import models as accounting_models
+    from datetime import date
+
+    await _stock_in(db, company.id, product.id, warehouse.id, Decimal(100))
+    await ContactService.update_credit_limit(db, company_id=company.id, contact_id=customer.id, credit_limit=Decimal(1), updated_by=None)
+    db.add(accounting_models.Invoice(
+        company_id=company.id, number="FV-TEST-0002", direction="sale", contact_id=customer.id,
+        status="posted", issue_date=date.today(), total=Decimal(999999), balance_due=Decimal(999999),
+    ))
+    await db.commit()
+
+    order = await SalesOrderService.create_draft(
+        db, company_id=company.id,
+        payload=schemas.SalesOrderCreate(
+            customer_id=customer.id, warehouse_id=warehouse.id,
+            lines=[schemas.SalesOrderLineCreate(product_id=product.id, quantity=Decimal(10), unit_price=Decimal(10))],
+        ),
+        created_by=None,
+    )
+    # Sin CompanyPackage 'administrative' activo — no bloquea, aunque el
+    # saldo esté groseramente excedido.
+    order = await SalesOrderService.confirm(db, company_id=company.id, order_id=order.id, actor_id=None)
+    assert order.status == "confirmed"

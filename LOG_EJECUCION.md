@@ -1987,3 +1987,24 @@ implementada en el código:
   recepción TOTAL (`status=='received'`), ni una recepción parcial alcanza.
 
 12/12 en `test_purchasing_module.py`, 196/196 en la suite completa.
+
+---
+
+## sales: Motor de Contención Financiera, por fin con test real (sep-2026)
+
+Suite existente (11/11) corrida aislada, sin bugs — cubre precio por volumen, reserva/liberación,
+sobreventa bloqueada, envío completo/parcial, cancelación, cotización expirada/ciclo completo,
+concurrencia real, RLS. Hallazgo real: `README.md` afirma que el Motor de Contención Financiera está
+"verificado end-to-end", pero no existía ningún test que lo reprodujera — ni en `sales` ni en
+`accounting` (que sigue sin archivo de test dedicado). El código en sí ya integraba correctamente
+`CreditControlService.assert_customer_not_blocked()` en `confirm()`.
+
+2 tests nuevos, cruzando `sales`+`accounting`+`contacts` de verdad (Invoice posted real, `credit_limit`
+real vía `ContactService.update_credit_limit` del módulo 2 de esta misma regresión):
+
+- Bloqueo por crédito excedido → sigue bloqueado si el límite sube pero no alcanza → desbloqueo real
+  al subir el límite lo suficiente.
+- Acoplamiento flojo confirmado: sin `administrative` activo, confirma sin evaluar nada, aunque el
+  saldo esté groseramente excedido.
+
+13/13 en `test_sales_module.py`, 198/198 en la suite completa.

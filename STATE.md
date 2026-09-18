@@ -383,6 +383,21 @@ LOG_EJECUCION.md.
   directo). No confirmado por Roberto.
 - [extendido] fuera de alcance: Descuentos/Promociones, Comisiones de
   Vendedores, Devoluciones (RMA).
+- **Regresión QA externa (sep-2026)**: hallazgo real — `README.md` lista
+  el Motor de Contención Financiera como "verificado end-to-end", pero
+  no existía NINGÚN test que lo reprodujera (ni acá, ni en `accounting`
+  — sigue sin `test_accounting_module.py` dedicado, gap ya documentado).
+  El código en sí ya estaba correcto (`SalesOrderService.confirm()` invoca
+  `CreditControlService.assert_customer_not_blocked()` solo si
+  `administrative` está activo). Se escribieron 2 tests nuevos que
+  reproducen el flujo completo por primera vez: bloqueo por crédito
+  excedido → sigue bloqueado si el límite sube pero no alcanza → se
+  desbloquea de verdad al subir el límite lo suficiente (usando
+  `ContactService.update_credit_limit`, el endpoint del módulo 2 de esta
+  misma regresión); y el caso complementario, acoplamiento flojo
+  confirmado: sin el paquete `administrative` activo, confirma sin
+  evaluar contención financiera aunque el saldo esté groseramente
+  excedido.
 - **Fase 2.5 (contrato re-congelado: 38 rutas, 49 schemas) — completa.**
 - **Fase 3 (frontend) — completa:** `PriceListsPage`+`CreatePriceListDialog`,
   `QuotesPage`+`CreateQuoteDialog`+`QuoteDetailDialog` (envío→conversión a
