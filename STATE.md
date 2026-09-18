@@ -695,6 +695,22 @@ spec 7.1) — **Fases 1-4 completas**
   como los de `core`/`contacts`, es una decisión de producto pendiente
   de confirmar, no algo que se decidió unilateralmente acá. 7/7, 229/229
   en la suite completa.
+- **Instrucción explícita del usuario: cerrar el gap de arriba como
+  corrección**, mismo criterio que `core`/`contacts`. `EmployeeService.
+  update()` nuevo (`PATCH /hr/employees/{id}`) — reasigna
+  `manager_employee_id`/`position_id`/`salary`/campos básicos. Con esto,
+  la jerarquía circular deja de ser estructuralmente imposible (ya no es
+  solo create+existencia previa) — así que ACÁ es donde corresponde la
+  validación real que antes no hacía falta: recorrido hacia arriba por
+  la cadena de managers del candidato, rechaza si vuelve a llegar al
+  propio empleado (probado con ciclos de 2 y de 3 eslabones, y
+  confirmado que extender una cadena válida sin ciclo sigue funcionando).
+  Autoasignación como propio gerente rechazada explícita. No se puede
+  editar un empleado ya `terminated`. `salary` gatea aparte
+  (`hr:employee:update-sensitive`, permiso nuevo, mismo criterio que
+  `contacts:contact:update_credit_limit` — chequeo a nivel router, no de
+  servicio, mismo patrón que el enmascarado de lectura DED-21). 6 tests
+  nuevos (13/13 en el archivo), 235/235 en la suite completa.
 
 ### `medical` (módulo 9 — Expediente Clínico, Agenda Médica, Consulta) — ✓ COMPLETO
 - Paquete requerido: `medical` (`require_package("medical")` en todas las

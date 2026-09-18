@@ -2087,3 +2087,28 @@ existe ningún endpoint para actualizar un Employee después de creado (reasigna
 puesto/salario) — el legajo es efectivamente de solo alta+baja.
 
 7/7 en test_hr_module.py, 229/229 en la suite completa.
+
+---
+
+## hr: PATCH /employees/{id} — gap de producto cerrado por instrucción explícita (sep-2026)
+
+Instrucción explícita del usuario: cerrar como corrección el gap reportado en la entrada anterior
+(no existía forma de actualizar un Employee), mismo criterio que core/contacts.
+
+EmployeeService.update() nuevo, PATCH /hr/employees/{id}: reasigna manager_employee_id/position_id/
+salary/campos básicos (first_name, last_name, email, phone, national_id). hire_date/user_id/status
+quedan fuera a propósito (hechos históricos/de vínculo, o responsabilidad de terminate()).
+
+Con esto, la jerarquía circular deja de ser estructuralmente imposible (ya no depende solo de que el
+manager exista antes de crear) — la validación real ahora vive acá: recorrido hacia arriba por la
+cadena de managers del candidato, rechaza si en algún punto vuelve a llegar al propio empleado.
+Probado con ciclos de 2 eslabones (A gerente de B, intentar que B sea gerente de A) y de 3 (A->B->C,
+intentar que A reporte a C) — ambos rechazados con ConflictError. Confirmado que extender una cadena
+real sin ciclo (D reportando a C) sigue funcionando sin problema. Autoasignación como propio gerente
+rechazada explícitamente. Editar un empleado ya terminated se rechaza.
+
+salary gatea aparte: hr:employee:update-sensitive (permiso nuevo), chequeo a nivel router (no de
+servicio) — mismo patrón que el enmascarado de lectura DED-21 y que contacts:contact:
+update_credit_limit del módulo 2.
+
+6 tests nuevos (13/13 en test_hr_module.py), 235/235 en la suite completa.

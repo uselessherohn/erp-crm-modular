@@ -126,6 +126,59 @@ class EmployeeService:
         return list(result.scalars().all())
 
     @staticmethod
+    async def update(
+        db: AsyncSession, *, company_id: int, employee_id: int, payload: schemas.EmployeeUpdate, updated_by: int | None
+    ) -> models.Employee:
+        """Hallazgo real de la regresión QA externa (sep-2026): no existía
+        forma de reasignar `manager_employee_id`/`position_id`/`salary`
+        después de creado un empleado. Al agregar esto, la jerarquía
+        circular (catálogo módulo 8) deja de ser estructuralmente
+        imposible — así que ACÁ es donde corresponde la validación real
+        que antes no hacía falta: recorrer la cadena de managers hacia
+        arriba desde el candidato y rechazar si se vuelve a llegar al
+        propio empleado (o si el candidato ES el propio empleado)."""
+        employee = await EmployeeService.get(db, company_id=company_id, employee_id=employee_id)
+        if employee.status != "active":
+            raise ConflictError("No se puede editar un empleado dado de baja")
+
+        changes = payload.model_dump(exclude_unset=True)
+
+        if "position_id" in changes and changes["position_id"] is not None:
+            await PositionService.get(db, company_id=company_id, position_id=changes["position_id"])
+
+        if "manager_employee_id" in changes and changes["manager_employee_id"] is not None:
+            new_manager_id = changes["manager_employee_id"]
+            if new_manager_id == employee_id:
+                raise ValidationError("Un empleado no puede ser su propio gerente")
+            manager = await EmployeeService.get(db, company_id=company_id, employee_id=new_manager_id)
+            if manager.status != "active":
+                raise ValidationError("El gerente asignado no está activo")
+
+            # Recorrido hacia arriba: si en algún punto de la cadena de
+            # managers del candidato aparece el propio employee_id, sería
+            # un ciclo (spec 8.1, catálogo módulo 8, "jerarquía circular").
+            cursor = manager
+            visited: set[int] = set()
+            while cursor.manager_employee_id is not None:
+                if cursor.manager_employee_id == employee_id:
+                    raise ConflictError(
+                        f"Asignación rechazada: crearía una jerarquía circular "
+                        f"(el empleado {employee_id} terminaría reportándose a sí mismo, "
+                        f"vía la cadena de gerentes de {new_manager_id})"
+                    )
+                if cursor.id in visited:
+                    break  # defensa extra: no debería haber ciclos preexistentes, pero no loopear infinito si los hay
+                visited.add(cursor.id)
+                cursor = await EmployeeService.get(db, company_id=company_id, employee_id=cursor.manager_employee_id)
+
+        for field, value in changes.items():
+            setattr(employee, field, value)
+        employee.updated_by = updated_by
+        await db.commit()
+        await db.refresh(employee)
+        return employee
+
+    @staticmethod
     async def terminate(
         db: AsyncSession, *, company_id: int, employee_id: int, payload: schemas.EmployeeTerminate, actor_id: int | None
     ) -> models.Employee:

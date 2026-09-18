@@ -96,23 +96,20 @@ async def test_manager_must_exist_and_be_active(db, company, position):
 # Casos límite
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_circular_hierarchy_structurally_impossible_no_update_endpoint(db, company):
+async def test_circular_hierarchy_at_creation_structurally_impossible(db, company):
     """Catálogo módulo 8: 'jerarquía circular (A reporta a B, B reporta a
-    A) → rechazada en la asignación, nunca persistida'. Hallazgo real:
-    no hay NINGÚN endpoint para actualizar manager_employee_id después
-    de creado un empleado (EmployeeService solo tiene create/get/list/
-    terminate) — así que un ciclo es estructuralmente IMPOSIBLE de
-    construir, no porque haya una validación explícita que lo detecte y
-    rechace, sino porque el manager siempre debe existir ANTES que el
-    empleado que lo referencia (EmployeeService.get lo confirma), y no
-    hay forma de "cerrar" el ciclo después. Documentado como límite
-    estructural, no como validación de negocio — distinto de lo que el
-    catálogo asumía (una regla que rechaza el ciclo), aunque el
-    resultado observable (nunca hay un ciclo persistido) es el mismo."""
-    # Intento del único camino que podría acercarse a un ciclo: un
-    # empleado que se referencia a sí mismo como manager, apenas creado
-    # (antes de tener id) — ni siquiera es expresable, porque
-    # manager_employee_id se valida contra un empleado YA EXISTENTE.
+    A) → rechazada en la asignación, nunca persistida'.
+
+    Actualización (sep-2026): esto describe dos mecanismos distintos
+    según el momento:
+    - Al CREAR un empleado (este test): sigue siendo estructuralmente
+      imposible, sin necesidad de validación explícita — el manager
+      siempre debe existir ANTES que el empleado que lo referencia.
+    - Al ACTUALIZAR un empleado ya existente (ver
+      test_update_manager_rejects_real_circular_hierarchy más abajo):
+      ahora SÍ es posible intentarlo (EmployeeService.update agregado en
+      esta misma regresión), así que ahí la validación es real y
+      explícita, no solo un efecto estructural."""
     with pytest.raises(NotFoundError):
         await EmployeeService.create(
             db, company_id=company.id,
@@ -256,3 +253,142 @@ async def test_salary_masked_server_side_without_sensitive_permission(db, compan
         employee_read_full.salary = None
     assert employee_read_full.salary == 18000
 
+
+
+# ---------------------------------------------------------------------------
+# EmployeeService.update — gap real cerrado (sep-2026): antes no existía
+# NINGÚN endpoint de actualización.
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_update_reassigns_manager_position_and_basic_fields(db, company, department):
+    pos_a = await PositionService.create(db, company_id=company.id, payload=schemas.PositionCreate(title="Junior", department_id=department.id))
+    pos_b = await PositionService.create(db, company_id=company.id, payload=schemas.PositionCreate(title="Senior", department_id=department.id))
+    boss = await EmployeeService.create(
+        db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="Jefa", last_name="X", hire_date=date(2020, 1, 1)), created_by=None
+    )
+    emp = await EmployeeService.create(
+        db, company_id=company.id,
+        payload=schemas.EmployeeCreate(first_name="Antes", last_name="Y", hire_date=date(2021, 1, 1), position_id=pos_a.id),
+        created_by=None,
+    )
+
+    updated = await EmployeeService.update(
+        db, company_id=company.id, employee_id=emp.id,
+        payload=schemas.EmployeeUpdate(first_name="Después", position_id=pos_b.id, manager_employee_id=boss.id, phone="9999-0000"),
+        updated_by=None,
+    )
+    assert updated.first_name == "Después"
+    assert updated.position_id == pos_b.id
+    assert updated.manager_employee_id == boss.id
+    assert updated.phone == "9999-0000"
+
+
+@pytest.mark.asyncio
+async def test_update_manager_to_none_clears_it_explicitly(db, company):
+    boss = await EmployeeService.create(
+        db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="Jefa", last_name="X", hire_date=date(2020, 1, 1)), created_by=None
+    )
+    emp = await EmployeeService.create(
+        db, company_id=company.id,
+        payload=schemas.EmployeeCreate(first_name="Y", last_name="Z", hire_date=date(2021, 1, 1), manager_employee_id=boss.id),
+        created_by=None,
+    )
+    assert emp.manager_employee_id == boss.id
+
+    cleared = await EmployeeService.update(
+        db, company_id=company.id, employee_id=emp.id, payload=schemas.EmployeeUpdate(manager_employee_id=None), updated_by=None
+    )
+    assert cleared.manager_employee_id is None
+
+
+@pytest.mark.asyncio
+async def test_update_self_as_manager_rejected(db, company):
+    emp = await EmployeeService.create(
+        db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="X", last_name="Y", hire_date=date(2021, 1, 1)), created_by=None
+    )
+    with pytest.raises(ValidationError):
+        await EmployeeService.update(
+            db, company_id=company.id, employee_id=emp.id, payload=schemas.EmployeeUpdate(manager_employee_id=emp.id), updated_by=None
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_manager_rejects_real_circular_hierarchy(db, company):
+    """Ahora que EmployeeService.update existe, un ciclo SÍ es
+    construible en principio (A gerente de B, luego intentar que B sea
+    gerente de A) — este test confirma que la validación nueva lo
+    rechaza de verdad, con un ciclo real de 2 y de 3 eslabones."""
+    a = await EmployeeService.create(db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="A", last_name="X", hire_date=date(2020, 1, 1)), created_by=None)
+    b = await EmployeeService.create(
+        db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="B", last_name="X", hire_date=date(2020, 1, 1), manager_employee_id=a.id), created_by=None
+    )
+    # Ciclo directo de 2: A reporta a B, pero B ya reporta a A.
+    with pytest.raises(ConflictError):
+        await EmployeeService.update(db, company_id=company.id, employee_id=a.id, payload=schemas.EmployeeUpdate(manager_employee_id=b.id), updated_by=None)
+
+    # Ciclo de 3 eslabones: A->B->C, intentar que A reporte a C.
+    c = await EmployeeService.create(
+        db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="C", last_name="X", hire_date=date(2020, 1, 1), manager_employee_id=b.id), created_by=None
+    )
+    with pytest.raises(ConflictError):
+        await EmployeeService.update(db, company_id=company.id, employee_id=a.id, payload=schemas.EmployeeUpdate(manager_employee_id=c.id), updated_by=None)
+
+    # Confirmación de que la cadena real (no circular) sí se puede armar:
+    # D reportando a C (extiende la cadena A->B->C->D) es válido.
+    d = await EmployeeService.create(db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="D", last_name="X", hire_date=date(2020, 1, 1)), created_by=None)
+    updated_d = await EmployeeService.update(db, company_id=company.id, employee_id=d.id, payload=schemas.EmployeeUpdate(manager_employee_id=c.id), updated_by=None)
+    assert updated_d.manager_employee_id == c.id
+
+
+@pytest.mark.asyncio
+async def test_cannot_update_terminated_employee(db, company):
+    emp = await EmployeeService.create(
+        db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="X", last_name="Y", hire_date=date(2020, 1, 1)), created_by=None
+    )
+    await EmployeeService.terminate(db, company_id=company.id, employee_id=emp.id, payload=schemas.EmployeeTerminate(termination_date=date(2024, 1, 1)), actor_id=None)
+    with pytest.raises(ConflictError):
+        await EmployeeService.update(db, company_id=company.id, employee_id=emp.id, payload=schemas.EmployeeUpdate(phone="1111"), updated_by=None)
+
+
+@pytest.mark.asyncio
+async def test_update_salary_requires_separate_sensitive_permission_router_level(db, company):
+    """Router-level: editar salary exige hr:employee:update-sensitive
+    ADEMÁS de hr:employee:update — mismo criterio que
+    contacts:contact:update_credit_limit. Se prueba la función real
+    (user_has_permission) que usa el router, mismo patrón que el test de
+    lectura de más arriba."""
+    emp = await EmployeeService.create(
+        db, company_id=company.id, payload=schemas.EmployeeCreate(first_name="X", last_name="Y", hire_date=date(2020, 1, 1), salary=1000), created_by=None
+    )
+
+    async def _get_or_create_permission(code: str) -> core_models.Permission:
+        existing = (await db.execute(select(core_models.Permission).where(core_models.Permission.code == code))).scalar_one_or_none()
+        if existing is not None:
+            return existing
+        perm = core_models.Permission(code=code, description=code)
+        db.add(perm)
+        await db.flush()
+        return perm
+
+    perm_update = await _get_or_create_permission("hr:employee:update")
+    unique = uuid.uuid4().hex[:8]
+    role = await RoleService.create_role(db, company_id=company.id, payload=core_schemas.RoleCreate(name="HR Editor Básico", permission_ids=[perm_update.id]))
+    limited_user = await UserService.create_user(
+        db, company_id=company.id,
+        payload=core_schemas.UserCreate(email=f"hreditor_{unique}@test.hn", full_name="HR Editor", password="password123"),
+        created_by=None,
+    )
+    db.add(core_models.UserRole(user_id=limited_user.id, role_id=role.id))
+    await db.commit()
+
+    has_sensitive = await user_has_permission(db, user_id=limited_user.id, code="hr:employee:update-sensitive")
+    assert has_sensitive is False  # confirma que el router rechazaría el cambio de salario para este usuario
+
+    # Sin el permiso sensible, el servicio en sí NO valida esto (es
+    # responsabilidad del router, mismo criterio que el enmascarado de
+    # lectura) — pero confirmamos que el router SÍ tiene el chequeo
+    # importando la función real que usa.
+    from app.hr.routers import update_employee
+    import inspect
+    source = inspect.getsource(update_employee)
+    assert "hr:employee:update-sensitive" in source

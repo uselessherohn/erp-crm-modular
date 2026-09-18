@@ -13,6 +13,7 @@ from app.core.dependencies import get_current_company_id, get_db_with_tenant_con
 from app.core.models import User
 from app.hr import schemas
 from app.hr.services import DepartmentService, EmployeeService, PositionService
+from app.shared.exceptions import ValidationError
 
 router = APIRouter(prefix="/hr", tags=["hr"])
 
@@ -117,4 +118,26 @@ async def terminate_employee(
     actor: User = Depends(require_permission("hr:employee:terminate")),
 ) -> schemas.EmployeeRead:
     employee = await EmployeeService.terminate(db, company_id=company_id, employee_id=employee_id, payload=payload, actor_id=actor.id)
+    return await _mask_sensitive(db, actor=actor, employee=schemas.EmployeeRead.model_validate(employee))
+
+
+@router.patch("/employees/{employee_id}", response_model=schemas.EmployeeRead)
+async def update_employee(
+    employee_id: int,
+    payload: schemas.EmployeeUpdate,
+    company_id: int = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    actor: User = Depends(require_permission("hr:employee:update")),
+) -> schemas.EmployeeRead:
+    """Hallazgo real de la regresión QA externa, sep-2026: no existía
+    forma de reasignar manager/puesto/salario después de creado un
+    empleado. `salary` gatea aparte (`hr:employee:update-sensitive`,
+    mismo criterio que la lectura DED-21 y que `contacts:contact:
+    update_credit_limit`) — editar el sueldo de alguien no debería ser
+    el mismo permiso que corregirle el teléfono."""
+    if "salary" in payload.model_fields_set:
+        if not await user_has_permission(db, user_id=actor.id, code="hr:employee:update-sensitive"):
+            raise ValidationError("No tenés permiso para editar el salario (hr:employee:update-sensitive)")
+
+    employee = await EmployeeService.update(db, company_id=company_id, employee_id=employee_id, payload=payload, updated_by=actor.id)
     return await _mask_sensitive(db, actor=actor, employee=schemas.EmployeeRead.model_validate(employee))

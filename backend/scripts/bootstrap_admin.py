@@ -112,6 +112,14 @@ async def bootstrap():
             models.Permission(code="hr:employee:read", description="Ver legajo (sin salario)"),
             models.Permission(code="hr:employee:read-sensitive", description="Ver salario del legajo"),
             models.Permission(code="hr:employee:terminate", description="Dar de baja a un empleado"),
+            models.Permission(
+                code="hr:employee:update",
+                description="Editar legajo — reasignar gerente/puesto (sin salario, hallazgo real sep-2026)",
+            ),
+            models.Permission(
+                code="hr:employee:update-sensitive",
+                description="Editar el salario del legajo (hallazgo real sep-2026)",
+            ),
             models.Permission(code="medical:record:create", description="Crear entrada de expediente clínico"),
             models.Permission(code="medical:record:read-own-patients", description="Ver expediente de pacientes propios"),
             models.Permission(code="medical:record:read-all", description="Ver expediente de cualquier paciente"),
