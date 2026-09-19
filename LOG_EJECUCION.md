@@ -2245,3 +2245,26 @@ lista directa — mi primer intento asumió mal la forma del resultado (row["fac
 Corregido en el test, no era un bug de la app.
 
 11/11 en test_reports_module.py, 244/244 en la suite completa.
+
+---
+
+## reports: sales_by_customer corregida para incluir medical/pharmacy, sin duplicar ecommerce (sep-2026)
+
+Instrucción explícita del usuario: cerrar como corrección el gap confirmado en la entrada anterior.
+
+_sales_by_customer reescrita con UNION ALL: sales_orders (comportamiento original, intacto) más
+invoices cuyo source_document_type es explícitamente uno de los tres orígenes NO-sales_order
+conocidos en el repo (medical_consultation, pharmacy_mtm_session, pharmacy_insurance_claim).
+Deliberadamente se excluyen facturas con source_document_type='sales_order' (evita duplicar
+ecommerce) y con source_document_type IS NULL (facturas manuales sin origen trazado — incluirlas
+sin poder distinguir si ya están contadas sería peor que el gap original, queda fuera de este
+cierre).
+
+top_products_by_revenue queda sin tocar: sigue siendo estructuralmente imposible sin agregar
+product_id a InvoiceLine, un cambio de modelo mayor que no fue lo que se pidió corregir.
+
+Test nuevo que prueba las dos puntas a la vez: una factura de origen medical (sin sales_order)
+aparece con su monto completo; un cliente de ecommerce (con sales_order Y factura para la misma
+venta) aparece UNA sola vez, con el monto del sales_order — no duplicado.
+
+12/12 en test_reports_module.py, 245/245 en la suite completa.

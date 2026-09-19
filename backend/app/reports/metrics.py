@@ -39,16 +39,50 @@ class MetricDefinition:
 
 
 async def _sales_by_customer(db: AsyncSession, company_id: int, date_from: date, date_to: date) -> list[dict]:
+    """Hallazgo real de la regresión QA externa (sep-2026, instrucción
+    explícita del usuario tras confirmarlo con un test): esta métrica
+    solo miraba `sales_orders`, así que una factura originada en
+    `medical`/`pharmacy` (sin `sales_order` asociado — spec 8.1) nunca
+    aparecía acá, aunque `accounts_receivable_open` sí la incluye
+    (consulta la tabla genérica `invoices`). Corregido con un
+    `UNION ALL`:
+    1. `sales_orders` (comportamiento original, sin tocar).
+    2. `invoices` cuyo `source_document_type` es explícitamente uno de
+       los orígenes NO-`sales_order` conocidos (`medical_consultation`,
+       `pharmacy_mtm_session`, `pharmacy_insurance_claim` — ver
+       app/medical/services.py y app/pharmacy/services.py, únicos
+       lugares del repo que setean este campo además de `ecommerce`).
+
+    Deliberadamente NO se incluyen facturas con `source_document_type`
+    `'sales_order'` (evita duplicar `ecommerce`, que sí genera
+    `sales_order` Y factura para la misma venta) ni con
+    `source_document_type IS NULL` (facturas creadas manualmente sin
+    trazar su origen — incluirlas sin poder distinguir si ya están
+    contadas por otro lado sería una fuente de doble conteo silenciosa
+    peor que el gap original; queda fuera de este cierre, no es lo que
+    se pidió corregir)."""
     result = await db.execute(
         text(
             """
-            SELECT c.name AS cliente, SUM(sol.quantity * sol.unit_price) AS total
-            FROM sales_orders so
-            JOIN contacts c ON c.id = so.customer_id
-            JOIN sales_order_lines sol ON sol.sales_order_id = so.id
-            WHERE so.company_id = :company_id AND so.status != 'cancelado'
-              AND so.created_at >= :date_from AND so.created_at < :date_to
-            GROUP BY c.name
+            SELECT cliente, SUM(total) AS total FROM (
+                SELECT c.name AS cliente, SUM(sol.quantity * sol.unit_price) AS total
+                FROM sales_orders so
+                JOIN contacts c ON c.id = so.customer_id
+                JOIN sales_order_lines sol ON sol.sales_order_id = so.id
+                WHERE so.company_id = :company_id AND so.status != 'cancelado'
+                  AND so.created_at >= :date_from AND so.created_at < :date_to
+                GROUP BY c.name
+
+                UNION ALL
+
+                SELECT c.name AS cliente, i.subtotal AS total
+                FROM invoices i
+                JOIN contacts c ON c.id = i.contact_id
+                WHERE i.company_id = :company_id AND i.direction = 'sale' AND i.status = 'posted'
+                  AND i.source_document_type IN ('medical_consultation', 'pharmacy_mtm_session', 'pharmacy_insurance_claim')
+                  AND i.issue_date >= :date_from AND i.issue_date < :date_to
+            ) combined
+            GROUP BY cliente
             ORDER BY total DESC
             """
         ),

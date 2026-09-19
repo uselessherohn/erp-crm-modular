@@ -1510,6 +1510,25 @@ spec 7.1) — **Fases 1-4 completas**
   "arregla" `sales_by_customer` sin actualizar el test, para que el
   cambio sea intencional y no accidental). 11/11 en el archivo,
   244/244 en la suite completa.
+- **Instrucción explícita del usuario: cerrar `sales_by_customer` como
+  corrección** (mismo criterio que `core`/`contacts`/`hr`).
+  `_sales_by_customer` reescrita con `UNION ALL`: `sales_orders`
+  (comportamiento original, sin tocar) **más** `invoices` cuyo
+  `source_document_type` es explícitamente uno de los orígenes NO-
+  `sales_order` conocidos (`medical_consultation`,
+  `pharmacy_mtm_session`, `pharmacy_insurance_claim` — los únicos tres
+  usados en el repo fuera de `ecommerce`). Deliberadamente NO se
+  incluyen facturas con `source_document_type='sales_order'` (evita
+  duplicar `ecommerce`) ni con `source_document_type IS NULL`
+  (facturas manuales sin trazar origen — incluirlas sin poder
+  distinguir si ya están contadas por otro lado sería una fuente de
+  doble conteo silenciosa peor que el gap original; queda fuera de
+  este cierre). `top_products_by_revenue` queda sin tocar — sigue
+  siendo estructuralmente imposible sin una migración que agregue
+  `product_id` a `InvoiceLine`, cambio mayor no pedido acá. Probado
+  explícitamente que `ecommerce` NO se duplica (aparece una sola vez,
+  con el monto del `sales_order`, no sumado a la factura). 1 test
+  nuevo, 12/12 en el archivo, 245/245 en la suite completa.
 - **Exportación**: CSV con stdlib (`csv`, sin dependencia nueva); XLSX vía
   `openpyxl`; PDF vía `reportlab` con una tabla simple (`Table`/
   `SimpleDocTemplate`) — ambos agregados a `requirements.txt`, sin

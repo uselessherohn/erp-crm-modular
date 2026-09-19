@@ -268,7 +268,77 @@ async def test_medical_originated_invoice_missing_from_sales_metrics_but_present
 
     sbc = await MetricService.run(db, company_id=company.id, metric_key="sales_by_customer", date_from=date_from, date_to=date_to)
     assert not any(row["cliente"] == "Paciente Facturado" for row in sbc.rows), (
-        "sales_by_customer NO debería incluirla todavía — confirma el TODO explícito ya declarado "
-        "en metrics.py, no una sorpresa. Si este assert falla, el TODO se resolvió y hay que "
-        "actualizar STATE.md/este test."
+        "sales_by_customer SIGUE sin incluir facturas de origen desconocido/manual "
+        "(source_document_type=NULL, como ésta) — corregido para medical_consultation/"
+        "pharmacy_mtm_session/pharmacy_insurance_claim explícitos, deliberadamente NO para NULL "
+        "(ver docstring de _sales_by_customer)."
     )
+
+
+@pytest.mark.asyncio
+async def test_sales_by_customer_includes_medical_pharmacy_without_duplicating_ecommerce(db, company):
+    """Instrucción explícita del usuario: arreglar sales_by_customer para
+    incluir facturas de medical/pharmacy, con cuidado de no duplicar
+    ecommerce (que genera sales_order Y factura para la misma venta)."""
+    from app.contacts.models import Contact
+
+    await _setup_sales_invoice_account_mappings(db, company)
+
+    # Factura de origen medical — sin sales_order.
+    patient = Contact(company_id=company.id, name="Paciente Reportes", is_customer=True, is_patient=True)
+    db.add(patient)
+    await db.flush()
+    await db.commit()
+    med_invoice = await InvoiceService.create_draft(
+        db, company_id=company.id, created_by=None,
+        payload=accounting_schemas.InvoiceCreate(
+            direction=accounting_schemas.DirectionEnum.sale, contact_id=patient.id, issue_date=date.today(),
+            due_date=date.today() + timedelta(days=30),
+            lines=[accounting_schemas.InvoiceLineCreate(description="Consulta", quantity=Decimal("1"), unit_price=Decimal("300.00"))],
+        ),
+    )
+    med_invoice.source_document_type = "medical_consultation"
+    med_invoice.source_document_id = 999
+    await db.commit()
+    await InvoiceService.post(db, company_id=company.id, invoice_id=med_invoice.id, actor_id=None)
+
+    # Factura de origen ecommerce — CON sales_order (no debe duplicarse).
+    ecommerce_customer = Contact(company_id=company.id, name="Cliente Ecommerce Reportes", is_customer=True)
+    db.add(ecommerce_customer)
+    await db.flush()
+    await db.commit()
+    warehouse = await WarehouseService.create(db, company_id=company.id, payload=inventory_schemas.WarehouseCreate(name="Bodega EC"))
+    product = await ProductService.create(
+        db, company_id=company.id, created_by=None,
+        payload=inventory_schemas.ProductCreate(sku=f"SKU-{uuid.uuid4().hex[:6]}", name="Producto EC", product_type="facturable"),
+    )
+    order = await SalesOrderService.create_draft(
+        db, company_id=company.id, created_by=None,
+        payload=sales_schemas.SalesOrderCreate(
+            customer_id=ecommerce_customer.id, warehouse_id=warehouse.id,
+            lines=[sales_schemas.SalesOrderLineCreate(product_id=product.id, quantity=Decimal("2"), unit_price=Decimal("100.00"))],
+        ),
+    )
+    ec_invoice = await InvoiceService.create_draft(
+        db, company_id=company.id, created_by=None,
+        payload=accounting_schemas.InvoiceCreate(
+            direction=accounting_schemas.DirectionEnum.sale, contact_id=ecommerce_customer.id, issue_date=date.today(),
+            due_date=date.today() + timedelta(days=30),
+            lines=[accounting_schemas.InvoiceLineCreate(description="Producto EC", quantity=Decimal("2"), unit_price=Decimal("100.00"))],
+        ),
+    )
+    ec_invoice.source_document_type = "sales_order"
+    ec_invoice.source_document_id = order.id
+    await db.commit()
+    await InvoiceService.post(db, company_id=company.id, invoice_id=ec_invoice.id, actor_id=None)
+
+    date_from, date_to = date.today() - timedelta(days=1), date.today() + timedelta(days=1)
+    result = await MetricService.run(db, company_id=company.id, metric_key="sales_by_customer", date_from=date_from, date_to=date_to)
+    by_customer = {row["cliente"]: Decimal(str(row["total"])) for row in result.rows}
+
+    # Medical SÍ aparece ahora, con el monto de la factura.
+    assert by_customer.get("Paciente Reportes") == Decimal("300.00")
+
+    # Ecommerce aparece UNA sola vez, con el total del sales_order — NO
+    # 400 (200 del sales_order + 200 de la factura duplicada).
+    assert by_customer.get("Cliente Ecommerce Reportes") == Decimal("200.00")
