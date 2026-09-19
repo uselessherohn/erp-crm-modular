@@ -193,3 +193,62 @@ async def test_purge_eligible_isolated_per_company(db, company):
     await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company.id)})
     result_mine = await AuditRetentionService.count_purge_eligible(db, company_id=company.id)
     assert result_mine.eligible_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Catálogo módulo 25 — AMB-07, "el caso más importante de este módulo".
+# Test explícito y dedicado: la evidencia previa (docstring de arriba)
+# era indirecta, encontrada como efecto colateral de un bug en el
+# helper de test, no una confirmación directa y a propósito.
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_audit_table_truly_immutable_against_real_erp_app_credentials(db, company):
+    """Con Postgres real y las credenciales REALES de erp_app (el rol de
+    runtime de la API — `db` usa AsyncSessionLocal, que conecta como
+    erp_app, no como superusuario). Si esto alguna vez pasa sin
+    excepción, es el hallazgo más grave de toda la auditoría — reportar
+    primero, antes que cualquier otro resultado de esta corrida."""
+    from sqlalchemy.exc import DBAPIError
+
+    log = await AuditService.log_event(
+        db, company_id=company.id, event="test.immutability_check", entity_type="contact", entity_id=1, user_id=None,
+    )
+    await db.commit()
+    log_id = log.id  # capturado ANTES de cualquier rollback — mismo
+    # footgun de SQLAlchemy async ya documentado en contacts (STATE.md
+    # módulo 2): tocar un atributo de un objeto de una sesión después de
+    # un rollback() sin un refresh async explícito revienta con
+    # MissingGreenlet. company.id también se captura acá por la misma
+    # razón — el fixture `company` comparte esta misma sesión `db`.
+    company_id = company.id
+
+    with pytest.raises(DBAPIError) as update_exc:
+        await db.execute(text("UPDATE audit SET event = 'tampered' WHERE id = :id"), {"id": log_id})
+    assert "append-only" in str(update_exc.value) or "not allowed" in str(update_exc.value).lower()
+    await db.rollback()
+
+    with pytest.raises(DBAPIError) as delete_exc:
+        await db.execute(text("DELETE FROM audit WHERE id = :id"), {"id": log_id})
+    assert "append-only" in str(delete_exc.value) or "not allowed" in str(delete_exc.value).lower()
+    await db.rollback()
+
+    # La fila sigue intacta, sin alterar — ninguno de los dos intentos
+    # tuvo efecto real (el trigger aborta la transacción, no solo avisa).
+    await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_id)})
+    result = await db.execute(text("SELECT event FROM audit WHERE id = :id"), {"id": log_id})
+    assert result.scalar_one() == "test.immutability_check"
+
+
+@pytest.mark.asyncio
+async def test_no_http_delete_endpoint_exists_for_audit(company):
+    """Catálogo módulo 25: confirmar que no existe ningún endpoint HTTP
+    que borre — el borrado real es scripts/purge_audit.py, fuera de la
+    API, con credenciales de owner de tabla. Chequeo directo de las
+    rutas registradas, no una suposición."""
+    from app.audit.routers import router
+
+    all_methods: set[str] = set()
+    for route in router.routes:
+        if hasattr(route, "methods") and route.methods:
+            all_methods |= route.methods
+    assert "DELETE" not in all_methods

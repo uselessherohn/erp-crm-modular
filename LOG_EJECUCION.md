@@ -2268,3 +2268,29 @@ aparece con su monto completo; un cliente de ecommerce (con sales_order Y factur
 venta) aparece UNA sola vez, con el monto del sales_order — no duplicado.
 
 12/12 en test_reports_module.py, 245/245 en la suite completa.
+
+---
+
+## audit: inmutabilidad confirmada explícitamente con credenciales reales de erp_app (sep-2026)
+
+Catálogo módulo 25, AMB-07, "el caso más importante de este módulo": confirmar con Postgres real y
+credenciales reales de erp_app que UPDATE/DELETE sobre audit es imposible. La evidencia previa era
+indirecta (un bug de test que chocó con el trigger sin querer, documentado en el header del archivo)
+— nunca un test explícito y dedicado a propósito.
+
+test_audit_table_truly_immutable_against_real_erp_app_credentials: UPDATE y DELETE directos contra
+audit, con la sesión real conectada como erp_app (no superusuario). Ambos bloqueados:
+`InsufficientPrivilegeError: audit es append-only: UPDATE no permitido...` (mismo mensaje para
+DELETE). La fila queda intacta después de los dos intentos. Confirmado: sigue funcionando, sin
+excepción — no hubo hallazgo crítico que reportar.
+
+test_no_http_delete_endpoint_exists_for_audit: inspección directa de las rutas registradas del
+router de audit — cero métodos DELETE. Confirma que el borrado real sigue siendo exclusivamente
+scripts/purge_audit.py, fuera de la API.
+
+Al escribir el primer test aparecieron 2 veces el mismo footgun de SQLAlchemy async ya documentado
+en contacts: tocar log.id (y luego company.id, que resultó compartir la misma sesión vía el fixture)
+después de un rollback() sin capturarlos antes en variables locales revienta con MissingGreenlet.
+Corregido capturando ambos ANTES del primer rollback.
+
+11/11 en test_audit_module.py, 247/247 en la suite completa.

@@ -1917,6 +1917,28 @@ spec 7.1) — **Fases 1-4 completas**
 > retrofittearon para poblarla — tocaría cada módulo ya cerrado, fuera
 > de alcance de este cierre. Queda disponible desde ahora en adelante;
 > `null` en filas antiguas significa "sin diff capturado", no un error.
+>
+> **Regresión QA externa (sep-2026)** — catálogo módulo 25, AMB-07,
+> "el caso más importante de este módulo": la inmutabilidad de `audit`
+> ya tenía evidencia indirecta (encontrada como efecto colateral de un
+> bug de test, arriba en esta misma nota), pero nunca un test explícito
+> y dedicado que la confirmara a propósito. Escrito uno: `UPDATE`/
+> `DELETE` directo sobre `audit`, con las credenciales REALES de
+> `erp_app` (no superusuario) — ambos bloqueados por
+> `trg_audit_immutable`
+> (`InsufficientPrivilegeError: audit es append-only`), la fila
+> intacta después de los dos intentos. **Confirmado: sigue siendo
+> imposible, sin excepción — no hubo que reportar ningún hallazgo
+> crítico.** También confirmado por inspección directa de las rutas
+> registradas (no una suposición): el router de `audit` no tiene
+> NINGÚN método `DELETE` — el borrado real sigue siendo exclusivamente
+> `scripts/purge_audit.py`. Al escribir el test explícito aparecieron
+> 2 casos del mismo footgun de SQLAlchemy async ya documentado en
+> `contacts` (STATE.md módulo 2): tocar `log.id`/`company.id` después
+> de un `rollback()` sin capturarlos antes revienta con
+> `MissingGreenlet` — corregido capturando ambos en variables locales
+> antes del primer rollback. 2 tests nuevos, 11/11 en el archivo,
+> 247/247 en la suite completa.
 
 ## 3. Paquetes activos por cliente (company_packages)
 - (sin cliente final asignado — ciclo de referencia/plantilla del
