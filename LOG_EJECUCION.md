@@ -2217,3 +2217,31 @@ AMB-04 sigue abierta (requiere el _skip_commit que el propio código ya pide com
 su severidad real con evidencia, no la resuelve.
 
 2 tests nuevos/reforzados, 8/8 en test_ecommerce_module.py, 243/243 en la suite completa.
+
+---
+
+## reports: confirmado el TODO cross-módulo con un test real (sep-2026)
+
+Catálogo módulo 24, "el caso más importante de este módulo": ¿una factura de medical/pharmacy aparece
+en las métricas igual que una de sales? El propio código ya documentaba esto como TODO explícito en
+la cabecera de app/reports/metrics.py — no era una sorpresa a descubrir, sino algo a CONFIRMAR con
+evidencia real en vez de darlo por sentado (ni por el lado de "ya está mal, hay que arreglarlo" ni por
+el de "seguro ya está bien").
+
+Escrito un test que crea una factura directo (sin sales_order, mismo patrón que medical/pharmacy) y
+corre las 4 métricas contra ella:
+
+- accounts_receivable_open: SÍ la incluye (consulta la tabla genérica invoices).
+- sales_by_customer: NO la incluye (consulta sales_orders directo).
+
+Análisis de la corrección posible: top_products_by_revenue es estructuralmente imposible de arreglar
+sin tocar el modelo — InvoiceLine no tiene product_id, solo description libre. sales_by_customer
+(solo cliente+total) sí sería técnicamente corregible, pero necesita cuidado para no duplicar el
+conteo de ecommerce (que tiene sales_order Y factura a la vez) — no se decidió el fix sin antes
+confirmar el alcance con el usuario, mismo criterio que otros hallazgos de esta sesión.
+
+Bug propio encontrado al escribir el test: MetricService.run devuelve un objeto con .rows, no una
+lista directa — mi primer intento asumió mal la forma del resultado (row["factura"] sobre una tupla).
+Corregido en el test, no era un bug de la app.
+
+11/11 en test_reports_module.py, 244/244 en la suite completa.

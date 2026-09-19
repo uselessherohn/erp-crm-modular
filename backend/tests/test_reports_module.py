@@ -217,3 +217,58 @@ def test_export_pdf_produces_nonempty_bytes():
     content = ExportService.to_pdf(title="Test", columns=["a", "b"], rows=[{"a": 1, "b": 2}])
     assert len(content) > 0
     assert content[:4] == b"%PDF"
+
+
+@pytest.mark.asyncio
+async def test_medical_originated_invoice_missing_from_sales_metrics_but_present_in_ar(db, company):
+    """Catálogo módulo 24 — 'el caso más importante de este módulo': una
+    factura originada en medical/pharmacy (no en sales), ¿aparece igual
+    que una de sales en las métricas correspondientes?
+
+    Respuesta real confirmada, NO es una sorpresa — coincide con el TODO
+    explícito ya declarado en la cabecera de app/reports/metrics.py
+    ('métricas que crucen medical/pharmacy... requeriría validar el
+    paquete de origen de cada dominio... fuera de alcance de este
+    cierre'):
+
+    - `accounts_receivable_open` SÍ la incluye — consulta la tabla
+      genérica `invoices`, sin acoplarse al origen.
+    - `sales_by_customer`/`top_products_by_revenue` NO la incluyen —
+      consultan `sales_orders`/`sales_order_lines` directo, y una
+      factura de medical/pharmacy nunca tiene un `sales_order`
+      asociado. `top_products_by_revenue` en particular es
+      estructuralmente imposible de corregir sin tocar el modelo:
+      `InvoiceLine` no tiene `product_id` (solo `description` libre),
+      así que ni siquiera hay con qué vincular una línea de factura de
+      pharmacy a un producto para esa métrica específica."""
+    from app.contacts.models import Contact
+
+    customer = Contact(company_id=company.id, name="Paciente Facturado", is_customer=True, is_patient=True)
+    db.add(customer)
+    await db.flush()
+    await db.commit()
+    await _setup_sales_invoice_account_mappings(db, company)
+
+    # Factura creada DIRECTO (sin sales_order) — mismo patrón que
+    # medical/pharmacy: InvoiceService.create_draft llamado directo.
+    invoice = await InvoiceService.create_draft(
+        db, company_id=company.id, created_by=None,
+        payload=accounting_schemas.InvoiceCreate(
+            direction=accounting_schemas.DirectionEnum.sale, contact_id=customer.id, issue_date=date.today(),
+            due_date=date.today() + timedelta(days=30),
+            lines=[accounting_schemas.InvoiceLineCreate(description="Consulta médica", quantity=Decimal("1"), unit_price=Decimal("500.00"))],
+        ),
+    )
+    await InvoiceService.post(db, company_id=company.id, invoice_id=invoice.id, actor_id=None)
+
+    date_from, date_to = date.today() - timedelta(days=1), date.today() + timedelta(days=1)
+
+    ar = await MetricService.run(db, company_id=company.id, metric_key="accounts_receivable_open", date_from=date_from, date_to=date_to)
+    assert any(row["factura"] == invoice.number for row in ar.rows), "accounts_receivable_open debería incluirla — consulta la tabla genérica invoices"
+
+    sbc = await MetricService.run(db, company_id=company.id, metric_key="sales_by_customer", date_from=date_from, date_to=date_to)
+    assert not any(row["cliente"] == "Paciente Facturado" for row in sbc.rows), (
+        "sales_by_customer NO debería incluirla todavía — confirma el TODO explícito ya declarado "
+        "en metrics.py, no una sorpresa. Si este assert falla, el TODO se resolvió y hay que "
+        "actualizar STATE.md/este test."
+    )

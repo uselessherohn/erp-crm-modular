@@ -1488,6 +1488,28 @@ spec 7.1) — **Fases 1-4 completas**
   paquete de origen de cada dominio tocado antes de exponer el resultado
   (`diseno_modulos_22_25_erp_crm.md` sección 3.1), no solo el paquete
   `administrative` que gatea el router en general.
+- **Regresión QA externa (sep-2026) — confirmado con un test real, no
+  solo lectura de código**: catálogo módulo 24, "el caso más importante
+  de este módulo" — una factura de `medical`/`pharmacy` (sin
+  `sales_order` asociado), ¿aparece en las métricas igual que una de
+  `sales`? Respuesta: depende de CUÁL métrica, y coincide exactamente
+  con el TODO ya declarado arriba (no una sorpresa nueva).
+  `accounts_receivable_open` SÍ la incluye (consulta la tabla genérica
+  `invoices`, sin acoplarse al origen). `sales_by_customer`/
+  `top_products_by_revenue` NO — consultan `sales_orders`/
+  `sales_order_lines` directo. `top_products_by_revenue` en particular
+  es **estructuralmente imposible** de corregir sin tocar el modelo:
+  `InvoiceLine` no tiene `product_id` (solo `description` libre), así
+  que ni siquiera hay con qué vincular una línea de factura de pharmacy
+  a un producto. `sales_by_customer` (solo cliente+total, sin
+  granularidad de producto) sí sería técnicamente corregible sin tocar
+  el modelo, pero requiere cuidado real para no duplicar el conteo de
+  ventas de `ecommerce` (que SÍ tiene `sales_order` Y factura a la
+  vez) — no se decidió el fix sin confirmar el alcance primero. 1 test
+  nuevo que fija este comportamiento como esperado (falla si alguien
+  "arregla" `sales_by_customer` sin actualizar el test, para que el
+  cambio sea intencional y no accidental). 11/11 en el archivo,
+  244/244 en la suite completa.
 - **Exportación**: CSV con stdlib (`csv`, sin dependencia nueva); XLSX vía
   `openpyxl`; PDF vía `reportlab` con una tabla simple (`Table`/
   `SimpleDocTemplate`) — ambos agregados a `requirements.txt`, sin
