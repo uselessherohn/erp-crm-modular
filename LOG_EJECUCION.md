@@ -2170,3 +2170,23 @@ recuperable ahí — antes el test solo verificaba los campos del objeto devuelt
 confirmar la interoperabilidad cross-módulo de verdad.
 
 240/240 en la suite completa (mismo test existente ampliado, no se sumó un archivo nuevo).
+
+---
+
+## website: bug histórico de secuencias sigue corregido, 2 tests nuevos (sep-2026)
+
+El catálogo pedía explícitamente re-verificar un bug histórico (permisos de secuencia de Postgres,
+migración 1d9a25acd918) contra una base recién migrada desde cero, no una ya usada. Investigación
+seria antes de asumir: reconstruí el orden de la cadena de migraciones (que además tiene un punto de
+merge real, `d016d0daa072`, entre las ramas `pharmacy` y `website/ecommerce/reports` — un intento
+inicial de reconstruir el orden a mano con un script propio dio un resultado ambiguo por las ramas
+paralelas), y en vez de confiar en esa reconstrucción, consulté directo `has_sequence_privilege()`
+contra la base real ya migrada: `website_pages_id_seq`/`website_form_submissions_id_seq` SÍ tienen
+USAGE/SELECT para `erp_app`. Confirmado, no bug — y agregado un test permanente que lo verifica
+directo (no solo incidentalmente, vía un INSERT que funciona), para atrapar cualquier tabla nueva
+futura que se agregue sin su GRANT de secuencia.
+
+Segundo hueco cerrado sin bug: envío de formulario público sin `web` activo → `PACKAGE_NOT_LICENSED`
+(`ensure_web_package_active`), sin test hasta ahora pese a que el gating ya estaba bien implementado.
+
+2 tests nuevos, 9/9 en `test_website_module.py`, 242/242 en la suite completa.

@@ -1249,6 +1249,19 @@ spec 7.1) — **Fases 1-4 completas**
 > 4. Correr `npm run build` (chequeo de tipos) y
 >    `npx vitest run src/pages/WebsitePage.integration.test.tsx`.
 
+> **Regresión QA externa (sep-2026)**: suite existente (7/7) corrida
+> aislada, sin bugs — confirmado explícitamente lo que el catálogo pedía
+> re-verificar: el bug sistémico de permisos de secuencia (`1d9a25acd918`)
+> sigue corregido para `website_pages`/`website_form_submissions`
+> (consultado directo contra Postgres real, `has_sequence_privilege`, no
+> solo incidentalmente por un INSERT que funciona), y se agregó un test
+> permanente para esto — si algún día se agrega una tabla nueva a
+> `website` sin su `GRANT` de secuencia, este test lo atrapa directo.
+> También se cerró un hueco de cobertura sin bug: envío de formulario
+> público sin el paquete `web` activo → `PACKAGE_NOT_LICENSED`
+> (`ensure_web_package_active`), sin test hasta ahora. 2 tests nuevos,
+> 9/9 en el archivo, 242/242 en la suite completa.
+
 - **Rutas nuevas: 10** (117 rutas totales, 107 previas + 10): panel interno
   (`POST/GET /website/pages`, `GET/PATCH /website/pages/{id}`,
   `POST /website/pages/{id}/publish`, `POST /website/pages/{id}/unpublish`,

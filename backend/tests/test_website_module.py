@@ -175,3 +175,39 @@ async def test_rls_blocks_cross_tenant_page_read(db):
     await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_b.id)})
     result = await db.execute(text("SELECT count(*) FROM website_pages WHERE id = :id"), {"id": page.id})
     assert result.scalar_one() == 0, "RLS falló: la compañía B pudo leer una página de la compañía A"
+
+
+@pytest.mark.asyncio
+async def test_erp_app_has_sequence_privileges_on_website_tables(db):
+    """Catálogo módulo 22: 'bug real ya encontrado una vez en CI'
+    (permisos de secuencia de Postgres al insertar desde la ruta
+    pública, sin JWT) — mismo bug sistémico documentado en la migración
+    1d9a25acd918 ('cada migración con tabla nueva necesita su propio
+    GRANT de secuencia, o erp_app no puede insertar'). Confirmado que
+    sigue corregido: no solo incidentalmente (los tests de arriba ya
+    insertan de verdad como erp_app), sino con una consulta explícita
+    de privilegios — para que si algún día alguien agrega una tabla
+    nueva a website sin su GRANT de secuencia, este test lo atrape
+    directo, sin depender de que otro test "se dé cuenta" por casualidad."""
+    result = await db.execute(text(
+        "SELECT c.relname, has_sequence_privilege('erp_app', c.oid, 'USAGE') "
+        "FROM pg_class c WHERE c.relkind = 'S' "
+        "AND c.relname IN ('website_pages_id_seq', 'website_form_submissions_id_seq')"
+    ))
+    rows = dict(result.all())
+    assert rows == {"website_pages_id_seq": True, "website_form_submissions_id_seq": True}
+
+
+@pytest.mark.asyncio
+async def test_public_form_submission_without_web_package_rejected(db, company):
+    """Catálogo módulo 22: 'Envío de formulario sin web activo →
+    PACKAGE_NOT_LICENSED'. Sin ningún CompanyPackage 'web' configurado
+    para esta compañía. El router público llama a esta misma función
+    ANTES de cualquier otra cosa (ver app/website/routers.py,
+    submit_public_form) — probarla directo es equivalente a probar el
+    router completo para este caso, sin necesidad de levantar HTTP."""
+    from app.shared.exceptions import PackageNotLicensedError
+    from app.website.dependencies import ensure_web_package_active
+
+    with pytest.raises(PackageNotLicensedError):
+        await ensure_web_package_active(db, company_id=company.id)
