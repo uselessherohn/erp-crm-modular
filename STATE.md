@@ -1697,6 +1697,24 @@ spec 7.1) — **Fases 1-4 completas**
 > `contracts/openapi.json` recongelado (162 rutas / 200 operaciones),
 > `npx vitest run` en **19/19 archivos, 30/30 tests**. Detalle completo
 > de la corrida en `LOG_EJECUCION.md`.
+>
+> **Regresión QA externa (sep-2026), módulos 16-21 completos**: suite
+> existente (43/43) corrida aislada, **sin ningún bug encontrado** — el
+> módulo con mejor cobertura/documentación previa de todo lo auditado
+> hasta acá. Confirmado explícitamente lo que el catálogo pedía
+> verificar antes de asumir: interacciones (módulo 17) usa una
+> interfaz real (`DrugInteractionProvider`) con un stub de desarrollo
+> sin salida de red (`DevStubDrugInteractionProvider`, DED-58) — no una
+> base propia sin abstracción, cumple el espíritu de spec 8.3 aunque el
+> catálogo la daba por "aún no construida"; el flujo de reclamo
+> rechazado de aseguradoras (módulo 18) ya documenta explícitamente en
+> el propio código el caso "aprobado no se puede rechazar sin devolución"
+> (mismo criterio que TODO-42). Único agregado: un cross-check explícito
+> (módulo 20) que confirma que la PO generada desde reposición es
+> recuperable por `PurchaseOrderService.get()` de `purchasing` — antes
+> se confiaba en que ambos módulos comparten tabla sin una prueba directa
+> que lo confirmara. 240/240 en la suite completa (mismo test existente
+> ampliado, no se sumó un archivo nuevo).
 
 - **1 tabla nueva**: `pharmacy_reorder_points` (punto de pedido y
   cantidad de reposición por `(company_id, product_id, warehouse_id)`).

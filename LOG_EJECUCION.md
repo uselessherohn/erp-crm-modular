@@ -2150,3 +2150,23 @@ código que `PublicBusySlot` (el schema de la ruta pública de disponibilidad) s
 `scheduled_start`/`scheduled_end` — nunca PHI, ni por descuido futuro.
 
 5 tests nuevos, 52/52 en `test_medical_module.py`, 240/240 en la suite completa.
+
+---
+
+## pharmacy (módulos 16-21): sin bugs, el mejor módulo hasta ahora (sep-2026)
+
+Suite existente (43/43) corrida aislada — sin ningún bug encontrado. Confirmado lo que el catálogo
+pedía verificar antes de asumir:
+
+- Módulo 17 (interacciones): usa DrugInteractionProvider (interfaz real) + DevStubDrugInteractionProvider
+  (stub sin salida de red, DED-58) — NO una base propia sin abstracción. El catálogo la daba por "aún
+  no construida", pero se construyó después con buena arquitectura.
+- Módulo 18 (aseguradoras): el flujo de reclamo rechazado después de aprobado ya está documentado
+  explícitamente en el código como fuera de alcance (mismo criterio que TODO-42 de dispensación).
+
+Único agregado: un cross-check explícito en el test de generación de PO desde reposición (módulo 20),
+confirmando con PurchaseOrderService.get() (el servicio REAL de purchasing) que la PO generada es
+recuperable ahí — antes el test solo verificaba los campos del objeto devuelto por pharmacy, sin
+confirmar la interoperabilidad cross-módulo de verdad.
+
+240/240 en la suite completa (mismo test existente ampliado, no se sumó un archivo nuevo).

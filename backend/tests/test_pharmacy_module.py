@@ -650,6 +650,16 @@ async def test_generate_purchase_order_with_administrative_creates_real_po(db, c
     assert len(po.lines) == 1
     assert po.lines[0].quantity_ordered == Decimal("50")
 
+    # Catálogo módulo 20: la PO generada debe ser recuperable por los
+    # propios servicios de purchasing, indistinguible de una creada
+    # manualmente salvo por su reference — cross-check explícito (no
+    # solo confiar en que ambos módulos comparten tabla).
+    from app.purchasing.services import PurchaseOrderService
+
+    fetched = await PurchaseOrderService.get(db, company_id=company.id, po_id=po.id)
+    assert fetched.id == po.id
+    assert fetched.vendor_id == vendor.id
+
 
 @pytest.mark.asyncio
 async def test_reorder_point_delete_removes_it_from_suggestions(db, company, product, warehouse):
