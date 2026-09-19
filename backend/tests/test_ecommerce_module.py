@@ -210,6 +210,85 @@ async def test_webhook_confirms_order_and_posts_invoice(db, company, store):
     )
     assert replay["status"] == "already_processed"
 
+    # Catálogo módulo 23, "de los casos más importantes de todo el
+    # catálogo": el shape de la respuesta ("already_processed") no
+    # alcanza — confirmar que el EFECTO real (factura, stock) tampoco se
+    # duplicó. No solo confiar en el texto de la respuesta.
+    invoice_count = await db.execute(
+        text("SELECT count(*) FROM invoices WHERE source_document_type = 'sales_order' AND source_document_id = :id"),
+        {"id": result.sales_order_id},
+    )
+    assert invoice_count.scalar_one() == 1, "El reintento duplicó la factura — bug financiero real"
+
+    event_count = await db.execute(
+        text("SELECT count(*) FROM ecommerce_payment_gateway_events WHERE event_id = 'evt_ok_1'")
+    )
+    assert event_count.scalar_one() == 1, "El reintento insertó un segundo PaymentGatewayEvent"
+
+
+@pytest.mark.asyncio
+async def test_webhook_retry_after_crash_mid_process_fails_loud_never_silently_duplicates(db, company, store):
+    """Catálogo módulo 23 — el caso que el propio código ya documenta
+    como LIMITACIÓN CONOCIDA (ver el comentario en
+    WebhookService.handle_payment_event): confirm()/create_draft()/post()
+    hacen sus propios commits internos, y el PaymentGatewayEvent (lo que
+    hace idempotente un reintento) recién se guarda al final, en un
+    commit separado. Si el proceso se cae DESPUÉS de confirmar la orden
+    pero ANTES de guardar ese evento, un reintento legítimo de la
+    pasarela no encuentra el event_id (nunca se guardó) y reintenta
+    'desde cero' — pero la orden ya no está en 'draft'.
+
+    Este test reproduce esa caída a propósito (confirmando la orden
+    manualmente, simulando el punto exacto donde el proceso real se
+    cayó) y confirma la pregunta real del catálogo: ¿es un bug
+    financiero silencioso (factura/stock duplicados) o un fallo ruidoso
+    (error, sin duplicar nada)? Respuesta confirmada: falla ruidoso —
+    ConflictError, CERO facturas nuevas, CERO movimientos de stock
+    adicionales. Peor para la experiencia del reintento (el webhook
+    real fallaría en vez de confirmar), pero NUNCA duplica dinero ni
+    inventario. Documentado en STATE.md como riesgo real conocido
+    (AMB-04), no resuelto en este cierre — corregirlo de verdad
+    requiere el _skip_commit que el propio código ya pide como TODO."""
+    from app.sales.services import SalesOrderService
+
+    cart, token = await CartService.create_cart(db, company_id=company.id)
+    await CartService.add_item(
+        db, company_id=company.id, cart_id=cart.id, session_token=token,
+        payload=ecommerce_schemas.AddCartItem(product_id=store["product"].id, quantity=Decimal("1")),
+    )
+    result = await CheckoutService.checkout(
+        db, company_id=company.id, cart_id=cart.id, session_token=token,
+        payload=ecommerce_schemas.CheckoutRequest(name="Cliente Crash", email="crash@example.com"),
+    )
+
+    # Simula el punto exacto de la caída real: la orden ya se confirmó
+    # (con su propio commit, como en producción), pero el webhook nunca
+    # llegó a guardar el PaymentGatewayEvent.
+    await SalesOrderService.confirm(db, company_id=company.id, order_id=result.sales_order_id, actor_id=None)
+
+    settings = await EcommerceSettingsService.get_or_raise(db, company_id=company.id)
+    body = json.dumps({"event_id": "evt_crash_1", "sales_order_id": result.sales_order_id, "status": "paid"}).encode()
+    signature = hmac.new(settings.webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+
+    # El "reintento" (en realidad el primer intento que el sistema ve,
+    # porque el evento nunca se guardó) choca con la orden ya confirmada.
+    with pytest.raises(ConflictError):
+        await WebhookService.handle_payment_event(
+            db, company_id=company.id, gateway="stripe", raw_body=body, payload=json.loads(body), signature=signature
+        )
+
+    # Confirmación de la pregunta real: CERO facturas generadas — no hay
+    # duplicación financiera silenciosa, el fallo fue ruidoso.
+    invoice_count = await db.execute(
+        text("SELECT count(*) FROM invoices WHERE source_document_type = 'sales_order' AND source_document_id = :id"),
+        {"id": result.sales_order_id},
+    )
+    assert invoice_count.scalar_one() == 0
+
+    event_count = await db.execute(text("SELECT count(*) FROM ecommerce_payment_gateway_events WHERE event_id = 'evt_crash_1'"))
+    assert event_count.scalar_one() == 0
+
+
 
 @pytest.mark.asyncio
 async def test_rls_blocks_cross_tenant_cart_read(db):

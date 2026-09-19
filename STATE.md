@@ -1334,6 +1334,26 @@ spec 7.1) — **Fases 1-4 completas**
 > `frontend/src/lib/ecommerce-temp-contract.ts`), `npm run build` +
 > `vitest run src/pages/EcommercePage.integration.test.tsx`.
 
+> **Regresión QA externa (sep-2026)** — catálogo módulo 23, "de los
+> casos más importantes de todo el catálogo": el webhook de pago,
+> ¿es idempotente de verdad ante un reintento tras una caída a medio
+> proceso (AMB-04), o puede duplicar factura/stock? El test existente
+> solo confirmaba el *shape* de la respuesta ("already_processed"), no
+> el efecto real. Reforzado con conteos explícitos de `invoices`/
+> `ecommerce_payment_gateway_events` (sigue en 1, no se duplica). Y se
+> agregó el caso que AMB-04 describe en teoría pero nunca se había
+> reproducido de verdad: confirmar la orden manualmente (simulando el
+> punto exacto donde el proceso real se cae, antes de guardar el
+> evento) y disparar el webhook — **confirmado: falla ruidoso
+> (`ConflictError`), CERO facturas y CERO eventos nuevos, nunca una
+> duplicación financiera silenciosa.** Peor para la experiencia del
+> reintento (rompe en vez de confirmar), pero el riesgo real es
+> "el pago no se refleja hasta que alguien reintente manual", no
+> "se cobra/descuenta stock dos veces". AMB-04 sigue abierta — esto
+> confirma su severidad real, no la resuelve (requiere el `_skip_commit`
+> que el propio código ya pide como TODO). 2 tests nuevos, 8/8 en el
+> archivo, 243/243 en la suite completa.
+
 - **Rutas nuevas: 9** (126 rutas totales, 117 previas + 9): panel interno
   (`POST/GET/PATCH /ecommerce/settings`) + storefront público sin JWT
   (`GET /public/ecommerce/{company_id}/catalog`,

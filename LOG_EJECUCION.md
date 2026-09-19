@@ -2190,3 +2190,30 @@ Segundo hueco cerrado sin bug: envío de formulario público sin `web` activo �
 (`ensure_web_package_active`), sin test hasta ahora pese a que el gating ya estaba bien implementado.
 
 2 tests nuevos, 9/9 en `test_website_module.py`, 242/242 en la suite completa.
+
+---
+
+## ecommerce: idempotencia real del webhook de pago — el caso más importante del catálogo (sep-2026)
+
+El catálogo marca esto explícitamente como "de los casos más importantes de todo el catálogo": el
+webhook de pago, ¿es idempotente de verdad, o un reintento tras una caída puede duplicar factura o
+descuento de stock? El código ya documentaba honestamente la limitación real (comentario en
+WebhookService.handle_payment_event, AMB-04 en STATE.md): confirm()/create_draft()/post() hacen sus
+propios commits internos, y el PaymentGatewayEvent (lo que hace idempotente un reintento) se guarda
+recién al final, en un commit separado.
+
+Dos mejoras de test:
+
+1. El test existente (test_webhook_confirms_order_and_posts_invoice) solo verificaba el *shape* de la
+   respuesta del reintento ("already_processed"), nunca el efecto real. Reforzado con conteos
+   explícitos: 1 factura, 1 PaymentGatewayEvent, ni con el reintento.
+2. Test nuevo que reproduce de verdad el escenario que AMB-04 describe en teoría: confirmar la orden
+   manualmente (simulando el punto exacto de una caída real, antes de guardar el evento) y disparar el
+   webhook. Resultado confirmado: falla RUIDOSO (ConflictError) — CERO facturas nuevas, CERO eventos
+   nuevos. Nunca una duplicación financiera silenciosa. El riesgo real es que el pago quede sin
+   reflejarse hasta un reintento manual, no que se cobre o descuente stock dos veces.
+
+AMB-04 sigue abierta (requiere el _skip_commit que el propio código ya pide como TODO) — esto confirma
+su severidad real con evidencia, no la resuelve.
+
+2 tests nuevos/reforzados, 8/8 en test_ecommerce_module.py, 243/243 en la suite completa.
