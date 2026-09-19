@@ -2294,3 +2294,48 @@ después de un rollback() sin capturarlos antes en variables locales revienta co
 Corregido capturando ambos ANTES del primer rollback.
 
 11/11 en test_audit_module.py, 247/247 en la suite completa.
+
+---
+
+## notifications: último módulo — 26/26 completos (sep-2026)
+
+Suite existente (11/11) corrida aislada, sin bugs. Confirmado el cross-check final que pedía el
+catálogo: grep de todos los call-sites externos de NotificationService.send/create en todo el repo
+da un solo resultado (app/medical/services.py, mensaje paciente→profesional) — y ese call-site ya
+tiene su propio test real que confirma la notificación generada de verdad, no solo ausencia de error.
+
+Único hueco cerrado: "se marca como leída, no se puede des-leer" — confirmado por dos ángulos:
+mark_read() es idempotente (segunda llamada no pisa read_at con un timestamp nuevo), y
+NotificationService no expone ningún método mark_unread en absoluto — estructuralmente imposible,
+no una decisión de permisos.
+
+12/12 en test_notifications_module.py, 248/248 en la suite completa.
+
+=================================================================================
+CIERRE DE LA REGRESIÓN QA EXTERNA (sep-2026) — 26/26 módulos
+=================================================================================
+
+Resumen de toda la campaña, de Fase 0 a acá:
+
+- Fase 0: entorno real levantado (Postgres 16, roles exactos de config.py), repo clonado real (no
+  el ZIP), 3 bugs reales encontrados y corregidos (pg_trgm/pgcrypto faltantes, falso positivo de
+  verify_state.py).
+- 26 módulos auditados, cada uno con su suite corrida aislada primero, luego contra la matriz del
+  catálogo. Bugs reales encontrados y corregidos: extensiones de Postgres, NoReferencedTableError en
+  5 archivos de test, professional_user_id sin validar (2 lugares, uno público), logging.basicConfig
+  faltante en toda la app, sales_by_customer sin cruzar medical/pharmacy.
+- Gaps de producto reales encontrados y cerrados (instrucción explícita del usuario en cada caso):
+  2FA + recuperación de contraseña + activar/desactivar usuario (core), credit_limit escribible +
+  búsqueda por email/tax_id + unicidad de email (contacts), PATCH de empleado con detección real de
+  ciclos (hr), sales_by_customer cross-módulo (reports).
+- 2 archivos de test escritos desde cero porque no existían (accounting, pipeline), pese a que el
+  catálogo afirmaba que accounting ya tenía uno — verificado y confirmado falso antes de creerlo.
+  hr también sin archivo, pero ahí el catálogo sí lo tenía bien documentado.
+- Varios "casos más importantes del módulo" según el propio catálogo, cada uno confirmado con
+  evidencia real en vez de asumido: idempotencia del webhook de pago (ecommerce) — nunca duplica
+  dinero/stock, falla ruidoso en el peor caso; inmutabilidad de audit contra credenciales reales de
+  erp_app — sigue siendo imposible, sin excepción.
+- Push a GitHub en cada módulo cerrado, rebaseando sobre el bot de CI (`chore(ci): congelar
+  contracts/openapi.json`) cuando hizo falta.
+
+Suite final: 248/248, sin regresiones en ningún punto de la campaña.

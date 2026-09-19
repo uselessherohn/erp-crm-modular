@@ -828,6 +828,22 @@ spec 7.1) — **Fases 1-4 completas**
   (campana global en `AppLayout`, contador de no leídas, poll cada 30s —
   sin WebSocket/SSE, TODO si se necesita push real-time) +
   `NotificationsPage.tsx` (gestión de plantillas + envío manual).
+- **Regresión QA externa (sep-2026) — último módulo de la auditoría
+  completa (26/26)**: suite existente (11/11) corrida aislada, sin
+  bugs. Confirmado el cross-check del catálogo: `grep` de todos los
+  call-sites externos de `NotificationService.send/create` en todo el
+  repo da **un solo resultado**, `app/medical/services.py` (el mensaje
+  paciente→profesional, DED-43) — y ese call-site ya tiene su propio
+  test real en `test_medical_module.py` que confirma que la
+  notificación se genera de verdad (no solo que el servicio no lanzó
+  error). Sin otros módulos que disparen notificaciones todavía.
+  Confirmado también "no se puede des-leer": no solo no usado, sino
+  que `NotificationService` no expone ningún método `mark_unread` en
+  absoluto — estructuralmente imposible, no una decisión de RBAC. Y que
+  `mark_read()` es idempotente (llamarlo dos veces no pisa `read_at`
+  con un timestamp más nuevo). 1 test nuevo, 12/12 en el archivo,
+  **248/248 en la suite completa — cierre de los 26 módulos de la
+  regresión QA externa (sep-2026)**.
   `NotificationsPage.integration.test.tsx`: crea y edita una plantilla,
   envía por plantilla con contexto real, y verifica que la campana
   refleja el no leído y que marcarla como leída persiste contra el

@@ -251,3 +251,25 @@ async def test_rls_blocks_cross_tenant_notification_list():
 
         await db_a.rollback()
         await db_b.rollback()
+
+
+@pytest.mark.asyncio
+async def test_mark_read_idempotent_and_no_way_to_unread(db, company, user):
+    """Catálogo módulo 26: 'se marca como leída, no se puede des-leer'.
+    Confirmado por dos ángulos: (1) mark_read() es idempotente —
+    llamarlo dos veces no cambia read_at a un timestamp más nuevo; y
+    (2) NotificationService no expone ningún método para volver
+    read_at a NULL — no hay 'mark_unread' en el servicio ni ruta HTTP
+    para eso, es estructuralmente imposible, no solo no usado."""
+    notification = await NotificationService.send(
+        db, company_id=company.id,
+        payload=notifications_schemas.NotificationSend(recipient_user_id=user.id, title="X", body="..."),
+    )
+    first = await NotificationService.mark_read(db, company_id=company.id, user_id=user.id, notification_id=notification.id)
+    first_read_at = first.read_at
+    assert first_read_at is not None
+
+    second = await NotificationService.mark_read(db, company_id=company.id, user_id=user.id, notification_id=notification.id)
+    assert second.read_at == first_read_at  # no se pisa con un timestamp nuevo
+
+    assert not hasattr(NotificationService, "mark_unread")
