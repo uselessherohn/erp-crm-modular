@@ -1,0 +1,9 @@
+# Dependencias de la suite de calidad (scripts/qa_suite/) — NO se
+# instalan en producción, solo en el entorno de CI/desarrollo que corre
+# `python scripts/qa_suite/run_quality_suite.py`. Separadas de
+# requirements.txt a propósito: la app en sí nunca las importa.
+pytest-cov==7.1.0
+ruff==0.16.8
+mypy==2.3.1
+pip-audit==2.10.1
+hypothesis==6.168.0

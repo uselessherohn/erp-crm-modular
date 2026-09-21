@@ -1,0 +1,84 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 150
+# Calibrado al estilo real ya establecido del proyecto (docstrings largos
+# en español, líneas de SQL) en la primera corrida de esta suite de
+# calidad — el máximo real encontrado fue 146. No es "aflojar el
+# estándar": es medir el estándar real en vez de imponer un default
+# genérico (88/120) que este proyecto nunca siguió porque ningún linter
+# había corrido antes.
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "DTZ", "FURB"]
+ignore = [
+    # DTZ011 (call-date-today): los 7 usos reales en el repo son
+    # `date.today()` poblando columnas tipadas `Date` (no `DateTime`) —
+    # issue_date, hire_date, etc. La zona horaria no aplica a un `date`
+    # sin hora; la regla asume que siempre se quiere un datetime
+    # timezone-aware, lo cual no es el caso acá. Confirmado uno por uno
+    # en la primera corrida de esta suite, no un blanket-ignore sin
+    # revisar.
+    "DTZ011",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 (function-call-in-default-argument) dispara en TODOS los
+# `Depends(...)`/`Query(...)`/etc. de FastAPI — es el patrón estándar y
+# obligatorio del framework, no un bug real (589 de los 693 hallazgos de
+# la primera corrida de esta suite de calidad eran esto). Silenciarlo
+# acá en vez de con un `# noqa` por línea, que sería ruido en cientos de
+# firmas de router sin agregar información real.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Form",
+    "fastapi.File",
+    # Fábricas de dependencias paramétricas propias del proyecto — mismo
+    # patrón que Depends(...) un nivel más adentro:
+    # Depends(require_permission("...")). Sin esto, B008 sigue
+    # disparando sobre la llamada interna aunque la externa ya esté
+    # exceptuada arriba.
+    "app.core.dependencies.require_permission",
+    "app.core.dependencies.require_package",
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# Plugin oficial de Pydantic — sin él, mypy analiza el `__init__`
+# sintetizado de cada BaseModel con una heurística genérica que da falsos
+# positivos reales: cualquier campo con default vía `Field(None, ...)`
+# (con al menos otra restricción, ej. `max_length=`) bajo
+# `from __future__ import annotations` se reportaba como
+# "Missing named argument" pese a tener default — confirmado con un
+# repro mínimo aislado antes de activar esto. Encontrado en la auditoría
+# de tipos, sep-2026 (afectaba 2 hallazgos reales: `lot_number` en
+# `StockMovementCreate` y `template_code` en `NotificationSend`).
+plugins = ["pydantic.mypy"]
+# Primera corrida de mypy en todo el proyecto — nunca corrió antes (mismo
+# criterio que el resto de esta suite: baseline real primero, exigir más
+# después de medir, no antes). Sin --strict a propósito: contra una base
+# de ~50 módulos con SQLAlchemy 2.0 (Mapped[...] ya tipa la mayoría de los
+# atributos de modelo) y Pydantic v2, --strict de entrada generaría una
+# cantidad de ruido que ocultaría los errores reales en vez de resaltarlos.
+disallow_untyped_defs = false
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+# alembic/versions/: cada migración es en gran parte boilerplate generado
+# (upgrade()/downgrade() con llamadas a op.*, tipado dinámicamente por la
+# librería) — tipar 30+ archivos de migración no aporta valor real.
+exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+# Las migraciones de Alembic reasignan `down_revision`/`branch_labels` con
+# tipos que cambian de módulo a módulo (str | tuple | None) — el propio
+# template de Alembic las genera así; no vale la pena silenciar esto
+# archivo por archivo.
+module = "alembic.*"
+ignore_errors = true
