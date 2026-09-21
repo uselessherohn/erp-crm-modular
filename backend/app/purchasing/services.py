@@ -21,8 +21,7 @@ confirmando o recibiendo el mismo PO a la vez se serializan, no compiten.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from decimal import Decimal
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,7 +50,7 @@ class PurchaseOrderService:
             await ProductService.get(db, company_id=company_id, product_id=line.product_id)
 
         number = await DocumentNumberingService.next_number(
-            db, company_id=company_id, doc_type="purchase_order", prefix="PO", year=datetime.now(timezone.utc).year
+            db, company_id=company_id, doc_type="purchase_order", prefix="PO", year=datetime.now(UTC).year
         )
 
         po = models.PurchaseOrder(

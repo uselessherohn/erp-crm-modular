@@ -5,27 +5,28 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.config import settings
-from app.core.routers import auth, companies, roles, users
-from app.contacts import routers as contacts_routers
-from app.inventory import routers as inventory_routers
-from app.purchasing import routers as purchasing_routers
-from app.sales import routers as sales_routers
 from app.accounting import routers as accounting_routers
-from app.pipeline import routers as pipeline_routers
+from app.audit import routers as audit_routers
+from app.config import settings
+from app.contacts import routers as contacts_routers
+from app.core.routers import auth, companies, roles, users
+from app.ecommerce import routers as ecommerce_routers
 from app.hr import routers as hr_routers
+from app.inventory import routers as inventory_routers
 from app.medical import routers as medical_routers
 from app.notifications import routers as notifications_routers
-from app.website import routers as website_routers
-from app.ecommerce import routers as ecommerce_routers
-from app.reports import routers as reports_routers
 from app.pharmacy import routers as pharmacy_routers
-from app.audit import routers as audit_routers
-from app.shared.exceptions import DomainError, ValidationError as DomainValidationError
+from app.pipeline import routers as pipeline_routers
+from app.purchasing import routers as purchasing_routers
+from app.reports import routers as reports_routers
+from app.sales import routers as sales_routers
+from app.shared.exceptions import DomainError
+from app.shared.exceptions import ValidationError as DomainValidationError
+from app.website import routers as website_routers
 
 # HALLAZGO REAL (regresión QA externa, sep-2026): sin esto, el logger raíz
 # de Python queda en WARNING sin ningún handler — cualquier logger.info()

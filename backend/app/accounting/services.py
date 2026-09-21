@@ -26,7 +26,7 @@ estado propio — lee `Invoice`/`Contact.credit_limit` en caliente.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -178,8 +178,8 @@ class JournalService:
         lines: list[tuple[str, str, Decimal]],  # (role, "debit"|"credit", amount)
         created_by: int | None,
     ) -> models.JournalEntry:
-        total_debit = Decimal("0")
-        total_credit = Decimal("0")
+        total_debit = Decimal(0)
+        total_credit = Decimal(0)
         resolved: list[tuple[int, Decimal, Decimal]] = []
         for role, side, amount in lines:
             if amount <= 0:
@@ -191,10 +191,10 @@ class JournalService:
                 db, company_id=company_id, document_type=document_type, role=role
             )
             if side == "debit":
-                resolved.append((account_id, amount, Decimal("0")))
+                resolved.append((account_id, amount, Decimal(0)))
                 total_debit += amount
             elif side == "credit":
-                resolved.append((account_id, Decimal("0"), amount))
+                resolved.append((account_id, Decimal(0), amount))
                 total_credit += amount
             else:
                 raise ValidationError(f"Lado de asiento inválido: '{side}' (debe ser 'debit' o 'credit')")
@@ -280,16 +280,16 @@ async def _compute_lines(
 ) -> tuple[Decimal, Decimal, Decimal, list[dict]]:
     """Común a Invoice y CreditDebitNote — calcula subtotal/tax/total por
     línea y agregado. Devuelve (subtotal, tax_amount, total, line_dicts)."""
-    subtotal = Decimal("0")
-    tax_amount = Decimal("0")
+    subtotal = Decimal(0)
+    tax_amount = Decimal(0)
     line_dicts = []
     for line in raw_lines:
-        rate = Decimal("0")
+        rate = Decimal(0)
         if line.tax_rate_id is not None:
             tax_rate = await TaxRateService.get(db, company_id=company_id, tax_rate_id=line.tax_rate_id)
             rate = tax_rate.rate
         line_subtotal = _round2(line.quantity * line.unit_price)
-        line_tax = _round2(line_subtotal * rate / Decimal("100"))
+        line_tax = _round2(line_subtotal * rate / Decimal(100))
         line_total = line_subtotal + line_tax
         subtotal += line_subtotal
         tax_amount += line_tax
@@ -334,7 +334,7 @@ class InvoiceService:
             company_id=company_id,
             doc_type=f"invoice_{payload.direction.value}",
             prefix=prefix,
-            year=datetime.now(timezone.utc).year,
+            year=datetime.now(UTC).year,
         )
         invoice = models.Invoice(
             company_id=company_id,
@@ -482,7 +482,7 @@ class CreditDebitNoteService:
             company_id=company_id,
             doc_type=f"note_{payload.note_type.value}_{payload.direction.value}",
             prefix=prefix,
-            year=datetime.now(timezone.utc).year,
+            year=datetime.now(UTC).year,
         )
         note = models.CreditDebitNote(
             company_id=company_id,
@@ -652,7 +652,7 @@ class PaymentService:
             company_id=company_id,
             doc_type=f"payment_{payload.direction.value}",
             prefix=prefix,
-            year=datetime.now(timezone.utc).year,
+            year=datetime.now(UTC).year,
         )
         payment = models.Payment(
             company_id=company_id,
@@ -790,7 +790,7 @@ class CreditControlService:
             )
         )
         invoices = list(result.scalars().all())
-        outstanding = sum((inv.balance_due for inv in invoices), Decimal("0"))
+        outstanding = sum((inv.balance_due for inv in invoices), Decimal(0))
         has_overdue = any(
             inv.due_date is not None and inv.due_date < date.today() and inv.balance_due > 0 for inv in invoices
         )

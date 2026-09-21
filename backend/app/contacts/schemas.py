@@ -18,7 +18,7 @@ class ContactBase(BaseModel):
     address: str | None = Field(None, max_length=500)
 
     @model_validator(mode="after")
-    def at_least_one_role(self) -> "ContactBase":
+    def at_least_one_role(self) -> ContactBase:
         # Regla de negocio no explícita en la spec pero razonable por
         # sentido común de dominio: un Contact sin ningún flag activo no
         # tiene motivo de existir en el sistema. DEDUCIBLE, documentado

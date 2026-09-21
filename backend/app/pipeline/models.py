@@ -71,7 +71,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class OpportunityStatusEnum(str, enum.Enum):
+class OpportunityStatusEnum(enum.StrEnum):
     open = "open"
     won = "won"
     lost = "lost"
@@ -80,7 +80,7 @@ class OpportunityStatusEnum(str, enum.Enum):
 OPPORTUNITY_STATUSES = tuple(s.value for s in OpportunityStatusEnum)
 
 
-class ActivityTypeEnum(str, enum.Enum):
+class ActivityTypeEnum(enum.StrEnum):
     call = "call"
     email = "email"
     meeting = "meeting"
@@ -152,7 +152,7 @@ class Opportunity(Base):
         CheckConstraint("amount IS NULL OR amount >= 0", name="ck_opportunities_amount_nonneg"),
     )
 
-    activities: Mapped[list["Activity"]] = relationship(back_populates="opportunity", lazy="selectin")
+    activities: Mapped[list[Activity]] = relationship(back_populates="opportunity", lazy="selectin")
 
 
 class Activity(Base):
@@ -182,4 +182,4 @@ class Activity(Base):
         CheckConstraint(f"activity_type IN {ACTIVITY_TYPES}", name="ck_activities_activity_type"),
     )
 
-    opportunity: Mapped["Opportunity | None"] = relationship(back_populates="activities", lazy="selectin")
+    opportunity: Mapped[Opportunity | None] = relationship(back_populates="activities", lazy="selectin")

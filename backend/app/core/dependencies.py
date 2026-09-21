@@ -13,6 +13,8 @@ Dependencias reutilizables de `core` (spec sección 5 y 2.4).
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from fastapi import Depends, Header, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +29,7 @@ from app.shared.exceptions import (
 )
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncIterator[AsyncSession]:
     async with AsyncSessionLocal() as session:
         yield session
 

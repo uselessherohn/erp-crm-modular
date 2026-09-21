@@ -6,10 +6,10 @@ el event loop). La dependencia `get_db_with_tenant_context` (que fija
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
@@ -63,9 +63,8 @@ def _session_scope_factory(bind_engine):
 
     @asynccontextmanager
     async def _scope() -> AsyncIterator[AsyncSession]:
-        async with bind_engine.connect() as connection:
-            async with AsyncSession(bind=connection, expire_on_commit=False, autoflush=False) as session:
-                yield session
+        async with bind_engine.connect() as connection, AsyncSession(bind=connection, expire_on_commit=False, autoflush=False) as session:
+            yield session
 
     return _scope
 
@@ -78,11 +77,11 @@ AsyncSessionLocal = _session_scope_factory(engine)
 AuthLookupSessionLocal = _session_scope_factory(auth_lookup_engine)
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncIterator[AsyncSession]:
     async with AsyncSessionLocal() as session:
         yield session
 
 
-async def get_auth_lookup_db() -> AsyncSession:
+async def get_auth_lookup_db() -> AsyncIterator[AsyncSession]:
     async with AuthLookupSessionLocal() as session:
         yield session

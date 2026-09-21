@@ -24,6 +24,7 @@ secuencia en el documento de diseño), `inventory` (3), `sales` (5),
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -106,14 +107,14 @@ class CartItem(Base):
     cart_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("ecommerce_carts.id", ondelete="CASCADE"), nullable=False, index=True)
 
     product_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("products.id"), nullable=False)
-    quantity: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
     # Precio congelado al agregar al carrito (spec 8.4) — cache de
     # UI/checkout, no fuente de verdad: `sales.SalesOrderLine.unit_price`
     # es la que realmente queda facturada, tomada de nuevo desde
     # `PriceListService.get_price` en el momento del checkout, no copiada
     # de este campo (evita que un carrito viejo "congele" un precio
     # desactualizado hasta el checkout real).
-    unit_price_snapshot: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    unit_price_snapshot: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

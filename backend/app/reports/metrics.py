@@ -19,9 +19,9 @@ dominio tocado antes de exponer el resultado (ver
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date
-from typing import Awaitable, Callable
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession

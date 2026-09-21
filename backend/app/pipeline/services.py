@@ -9,7 +9,7 @@ con un comando `complete` para marcar `completed_at`.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -149,7 +149,7 @@ class OpportunityService:
         won_stage = await OpportunityService._get_terminal_stage(db, company_id=company_id, is_won=True)
         opportunity.stage_id = won_stage.id
         opportunity.status = "won"
-        opportunity.closed_at = datetime.now(timezone.utc)
+        opportunity.closed_at = datetime.now(UTC)
         opportunity.version += 1
         await AuditService.log_event(
             db, company_id=company_id, event="opportunity.won", entity_type="opportunity",
@@ -170,7 +170,7 @@ class OpportunityService:
         lost_stage = await OpportunityService._get_terminal_stage(db, company_id=company_id, is_won=False)
         opportunity.stage_id = lost_stage.id
         opportunity.status = "lost"
-        opportunity.closed_at = datetime.now(timezone.utc)
+        opportunity.closed_at = datetime.now(UTC)
         opportunity.lost_reason = payload.lost_reason
         opportunity.version += 1
         await AuditService.log_event(
@@ -262,7 +262,7 @@ class ActivityService:
         activity = await ActivityService.get(db, company_id=company_id, activity_id=activity_id)
         if activity.completed_at is not None:
             raise ConflictError("La actividad ya está completada")
-        activity.completed_at = datetime.now(timezone.utc)
+        activity.completed_at = datetime.now(UTC)
         await db.commit()
         await db.refresh(activity)
         return activity

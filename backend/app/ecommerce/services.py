@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -357,7 +357,7 @@ class WebhookService:
         db.add(
             models.PaymentGatewayEvent(
                 company_id=company_id, gateway=gateway, event_id=str(event_id), payload_raw=payload,
-                sales_order_id=int(sales_order_id), processed_at=datetime.now(timezone.utc),
+                sales_order_id=int(sales_order_id), processed_at=datetime.now(UTC),
             )
         )
         await AuditService.log_event(

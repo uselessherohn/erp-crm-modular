@@ -49,12 +49,12 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
-class EmployeeStatusEnum(str, enum.Enum):
+class EmployeeStatusEnum(enum.StrEnum):
     active = "active"
     terminated = "terminated"
 

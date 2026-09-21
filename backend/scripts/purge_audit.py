@@ -87,13 +87,12 @@ def main() -> int:
         print("ERROR: psycopg no instalado — pip install 'psycopg[binary]'", file=sys.stderr)
         return 2
 
-    with psycopg.connect(args.db_url, connect_timeout=5) as conn:
-        with conn.cursor() as cur:
-            company_filter = "AND a.company_id = %(company_id)s" if args.company_id is not None else ""
-            params = {"company_id": args.company_id} if args.company_id is not None else {}
+    with psycopg.connect(args.db_url, connect_timeout=5) as conn, conn.cursor() as cur:
+        company_filter = "AND a.company_id = %(company_id)s" if args.company_id is not None else ""
+        params = {"company_id": args.company_id} if args.company_id is not None else {}
 
-            cur.execute(
-                f"""
+        cur.execute(
+            f"""
                 SELECT a.company_id,
                        COALESCE(p.retention_days, 90) AS retention_days,
                        count(*) FILTER (
@@ -105,36 +104,36 @@ def main() -> int:
                 WHERE 1=1 {company_filter}
                 GROUP BY a.company_id, p.retention_days
                 """,
-                params,
-            )
-            rows = cur.fetchall()
+            params,
+        )
+        rows = cur.fetchall()
 
-            if not rows:
-                print("Nada que evaluar — sin filas en 'audit' que coincidan con el filtro.")
-                return 0
+        if not rows:
+            print("Nada que evaluar — sin filas en 'audit' que coincidan con el filtro.")
+            return 0
 
-            total_eligible = 0
-            for company_id, retention_days, eligible in rows:
-                print(f"company_id={company_id} retention_days={retention_days} elegibles_para_borrar={eligible}")
-                total_eligible += eligible
+        total_eligible = 0
+        for company_id, retention_days, eligible in rows:
+            print(f"company_id={company_id} retention_days={retention_days} elegibles_para_borrar={eligible}")
+            total_eligible += eligible
 
-            if args.dry_run:
-                print(f"\n--dry-run: {total_eligible} fila(s) se borrarían. Nada fue modificado.")
-                return 0
+        if args.dry_run:
+            print(f"\n--dry-run: {total_eligible} fila(s) se borrarían. Nada fue modificado.")
+            return 0
 
-            if total_eligible == 0:
-                print("\nSin filas elegibles — no se desactiva el trigger.")
-                return 0
+        if total_eligible == 0:
+            print("\nSin filas elegibles — no se desactiva el trigger.")
+            return 0
 
-            confirm = input(f"\nSe van a borrar {total_eligible} fila(s) de 'audit' (excluyendo 'medical.*'). Escribir 'BORRAR' para confirmar: ")
-            if confirm != "BORRAR":
-                print("Cancelado — no se modificó nada.")
-                return 1
+        confirm = input(f"\nSe van a borrar {total_eligible} fila(s) de 'audit' (excluyendo 'medical.*'). Escribir 'BORRAR' para confirmar: ")
+        if confirm != "BORRAR":
+            print("Cancelado — no se modificó nada.")
+            return 1
 
-            cur.execute("ALTER TABLE audit DISABLE TRIGGER trg_audit_immutable")
-            try:
-                cur.execute(
-                    f"""
+        cur.execute("ALTER TABLE audit DISABLE TRIGGER trg_audit_immutable")
+        try:
+            cur.execute(
+                f"""
                     DELETE FROM audit a
                     USING audit_retention_policies p
                     WHERE a.company_id = p.company_id
@@ -142,26 +141,26 @@ def main() -> int:
                       AND a.event NOT LIKE 'medical.%%'
                       {company_filter}
                     """,
-                    params,
-                )
-                deleted_with_policy = cur.rowcount
-                cur.execute(
-                    f"""
+                params,
+            )
+            deleted_with_policy = cur.rowcount
+            cur.execute(
+                f"""
                     DELETE FROM audit a
                     WHERE NOT EXISTS (SELECT 1 FROM audit_retention_policies p WHERE p.company_id = a.company_id)
                       AND a.created_at < now() - interval '90 days'
                       AND a.event NOT LIKE 'medical.%%'
                       {company_filter}
                     """,
-                    params,
-                )
-                deleted_default = cur.rowcount
-            finally:
-                cur.execute("ALTER TABLE audit ENABLE TRIGGER trg_audit_immutable")
+                params,
+            )
+            deleted_default = cur.rowcount
+        finally:
+            cur.execute("ALTER TABLE audit ENABLE TRIGGER trg_audit_immutable")
 
-            conn.commit()
-            print(f"\nBorradas {deleted_with_policy + deleted_default} fila(s). Trigger de inmutabilidad reactivado.")
-            return 0
+        conn.commit()
+        print(f"\nBorradas {deleted_with_policy + deleted_default} fila(s). Trigger de inmutabilidad reactivado.")
+        return 0
 
 
 if __name__ == "__main__":

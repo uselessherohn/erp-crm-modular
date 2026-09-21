@@ -10,15 +10,16 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
+import pyotp
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException
-import pyotp
 
-from app.core import models, schemas, security
 from app.config import settings
+from app.core import models, schemas, security
 from app.shared.exceptions import ConflictError, DomainError, IdempotencyConflictError, NotFoundError, ValidationError
 
 
@@ -212,7 +213,7 @@ class UserService:
                     models.UserSession.user_id == user_id,
                     models.UserSession.revoked_at.is_(None),
                 )
-                .values(revoked_at=datetime.now(timezone.utc))
+                .values(revoked_at=datetime.now(UTC))
             )
 
         await AuditService.log_event(
@@ -321,7 +322,7 @@ class AuthService:
         if user is None or not user.is_active:
             raise invalid_credentials
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if user.locked_until is not None and user.locked_until > now:
             raise ValidationError(
                 f"Cuenta bloqueada por intentos fallidos hasta {user.locked_until.isoformat()}"
@@ -387,7 +388,7 @@ class AuthService:
         company_id desde ahí vía el rol de solo lectura BYPASSRLS, y recién
         entonces se fija el contexto RLS para todo lo demás."""
         token_hash = security.hash_refresh_token(raw_refresh_token)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         lookup_result = await auth_lookup_db.execute(
             select(models.UserSession.id, models.UserSession.company_id).where(
@@ -453,7 +454,7 @@ class AuthService:
         )
         session = result.scalar_one_or_none()
         if session is not None:
-            session.revoked_at = datetime.now(timezone.utc)
+            session.revoked_at = datetime.now(UTC)
             await db.commit()
 
 
@@ -492,7 +493,7 @@ class PasswordResetService:
         )
 
         raw_token, token_hash = security.generate_password_reset_token()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         reset_token = models.PasswordResetToken(
             company_id=company_id,
             user_id=user_id,
@@ -530,7 +531,7 @@ class PasswordResetService:
         auth_lookup_db: AsyncSession, db: AsyncSession, *, raw_token: str, new_password: str
     ) -> None:
         token_hash = security.hash_password_reset_token(raw_token)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         lookup_result = await auth_lookup_db.execute(
             select(
@@ -693,7 +694,7 @@ class TwoFactorService:
 # sin reinventar el mecanismo.
 # ---------------------------------------------------------------------------
 class IdempotencyService:
-    _TTL_HOURS_BY_DOMAIN = {
+    _TTL_HOURS_BY_DOMAIN: ClassVar[dict[str, str]] = {
         "sales": "idempotency_ttl_hours_sales",
         "accounting": "idempotency_ttl_hours_accounting",
         "medical_billing": "idempotency_ttl_hours_medical_billing",
@@ -729,7 +730,7 @@ class IdempotencyService:
         existing = result.scalar_one_or_none()
         if existing is None:
             return None
-        if existing.expires_at < datetime.now(timezone.utc):
+        if existing.expires_at < datetime.now(UTC):
             return None
         if existing.request_hash != request_hash:
             raise IdempotencyConflictError(
@@ -765,7 +766,7 @@ class IdempotencyService:
                 request_hash=request_hash,
                 response_snapshot=response_body,
                 response_status_code=response_status_code,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
+                expires_at=datetime.now(UTC) + timedelta(hours=ttl_hours),
             )
         )
         await db.flush()

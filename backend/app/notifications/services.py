@@ -128,7 +128,12 @@ class NotificationService:
             )
             title = _safe_format(template.subject_template, payload.context)
             body = _safe_format(template.body_template, payload.context)
-        elif payload.has_direct_content():
+        elif payload.title is not None and payload.body is not None:
+            # Equivalente a `payload.has_direct_content()` pero escrito así
+            # para que mypy pueda angostar `str | None` a `str` (el método
+            # no es un `TypeGuard`, así que asignar tras llamarlo dejaba
+            # `title`/`body` tipados como `str | None` pese a la garantía
+            # real en runtime — hallazgo de la auditoría de tipos, sep-2026).
             title = payload.title
             body = payload.body
         else:
@@ -192,7 +197,7 @@ class NotificationService:
 
     @staticmethod
     async def mark_all_read(db: AsyncSession, *, company_id: int, user_id: int) -> int:
-        from sqlalchemy import func
+        from sqlalchemy import CursorResult, func
 
         result = await db.execute(
             update(models.Notification)
@@ -204,4 +209,10 @@ class NotificationService:
             .values(read_at=func.now())
         )
         await db.commit()
+        # `AsyncSession.execute()` está tipado como `Result[Any]` en los
+        # stubs de SQLAlchemy 2.0 sin distinguir el caso de un `update()`
+        # de Core, que en runtime siempre devuelve un `CursorResult` real
+        # con `.rowcount` (confirmado — asyncpg lo soporta). El cast es
+        # solo para el checker de tipos, no cambia el comportamiento.
+        assert isinstance(result, CursorResult)
         return result.rowcount or 0

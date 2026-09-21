@@ -35,7 +35,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class PurchaseOrderStatusEnum(str, enum.Enum):
+class PurchaseOrderStatusEnum(enum.StrEnum):
     draft = "draft"
     confirmed = "confirmed"
     received = "received"  # recepción completa
@@ -81,7 +81,7 @@ class PurchaseOrder(Base):
         UniqueConstraint("company_id", "number", name="uq_purchase_orders_company_number"),
     )
 
-    lines: Mapped[list["PurchaseOrderLine"]] = relationship(
+    lines: Mapped[list[PurchaseOrderLine]] = relationship(
         back_populates="purchase_order", lazy="selectin", cascade="all, delete-orphan"
     )
 
@@ -106,4 +106,4 @@ class PurchaseOrderLine(Base):
         CheckConstraint("unit_cost >= 0", name="ck_po_lines_unit_cost_nonneg"),
     )
 
-    purchase_order: Mapped["PurchaseOrder"] = relationship(back_populates="lines", lazy="selectin")
+    purchase_order: Mapped[PurchaseOrder] = relationship(back_populates="lines", lazy="selectin")

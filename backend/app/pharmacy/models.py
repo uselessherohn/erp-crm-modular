@@ -117,7 +117,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
-class DispensationStatusEnum(str, enum.Enum):
+class DispensationStatusEnum(enum.StrEnum):
     dispensed = "dispensed"
     voided = "voided"
 
@@ -125,7 +125,7 @@ class DispensationStatusEnum(str, enum.Enum):
 DISPENSATION_STATUSES = tuple(s.value for s in DispensationStatusEnum)
 
 
-class AllergyCheckSourceEnum(str, enum.Enum):
+class AllergyCheckSourceEnum(enum.StrEnum):
     medical_record = "medical_record"
     form = "form"
 
@@ -266,7 +266,7 @@ class ControlledSubstanceLogEntry(Base):
 #   (dispensación): un cliente de MTM no tiene por qué ser paciente de
 #   `medical`, que puede ni siquiera estar activo.
 # ---------------------------------------------------------------------------
-class MtmSessionStatusEnum(str, enum.Enum):
+class MtmSessionStatusEnum(enum.StrEnum):
     open = "open"
     closed = "closed"
     cancelled = "cancelled"
@@ -275,7 +275,7 @@ class MtmSessionStatusEnum(str, enum.Enum):
 MTM_SESSION_STATUSES = tuple(s.value for s in MtmSessionStatusEnum)
 
 
-class MtmBillingModeEnum(str, enum.Enum):
+class MtmBillingModeEnum(enum.StrEnum):
     accounting_invoice = "accounting_invoice"
     simple_receipt = "simple_receipt"
 
@@ -443,7 +443,7 @@ class ProductActiveIngredient(Base):
     )
 
 
-class InteractionSeverityEnum(str, enum.Enum):
+class InteractionSeverityEnum(enum.StrEnum):
     moderate = "moderate"
     major = "major"
 
@@ -483,7 +483,7 @@ class DrugInteractionReferenceEntry(Base):
 CLAIM_STATUSES = ("pending", "submitted", "approved", "paid", "rejected")
 
 
-class InsuranceClaimStatusEnum(str, enum.Enum):
+class InsuranceClaimStatusEnum(enum.StrEnum):
     pending = "pending"
     submitted = "submitted"
     approved = "approved"

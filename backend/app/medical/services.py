@@ -16,6 +16,7 @@ lectura.
 """
 from __future__ import annotations
 
+import abc
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -92,7 +93,7 @@ class ClinicalRecordService:
     @staticmethod
     async def create_entry(
         db: AsyncSession, *, company_id: int, payload: schemas.ClinicalRecordEntryCreate, author_user_id: int
-    ) -> models.ClinicalRecordEntry:
+    ) -> schemas.ClinicalRecordEntryRead:
         await _get_patient_or_raise(db, company_id=company_id, patient_contact_id=payload.patient_contact_id)
 
         if payload.previous_entry_id is not None:
@@ -519,7 +520,7 @@ class PrescriptionService:
             patient_contact_id=prescription.patient_contact_id, professional_user_id=prescription.professional_user_id,
             notes=prescription.notes, voided_at=prescription.voided_at, void_reason=prescription.void_reason,
             issued_at=prescription.issued_at, created_by=prescription.created_by,
-            lines=[schemas.PrescriptionLineRead.model_validate(l) for l in lines],
+            lines=[schemas.PrescriptionLineRead.model_validate(line) for line in lines],
         )
 
     @staticmethod
@@ -716,7 +717,6 @@ class LabOrderService:
 # ---------------------------------------------------------------------------------
 # Módulo 12 — Teleconsulta. Ver DED-37/38/39 en models.py.
 # ---------------------------------------------------------------------------------------------
-import abc
 
 
 class TeleconsultationProvider(abc.ABC):
@@ -906,7 +906,7 @@ class MedicalBillingService:
                     source_document_type="medical_consultation",
                     source_document_id=consultation.id,
                     lines=[accounting_schemas.InvoiceLineCreate(
-                        description="Consulta médica", quantity=Decimal("1"),
+                        description="Consulta médica", quantity=Decimal(1),
                         unit_price=payload.amount, tax_rate_id=payload.tax_rate_id,
                     )],
                 ),

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import enum
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -32,18 +33,18 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
-class ProductTypeEnum(str, enum.Enum):
+class ProductTypeEnum(enum.StrEnum):
     facturable = "facturable"
     consumible = "consumible"
     servicio = "servicio"
 
 
-class MovementTypeEnum(str, enum.Enum):
+class MovementTypeEnum(enum.StrEnum):
     entrada = "entrada"
     salida = "salida"
     transferencia = "transferencia"
@@ -163,7 +164,7 @@ class StockMovement(Base):
     # entrada en destino), no un solo registro con dos warehouse_id, para
     # que el saldo materializado (StockLevel) se recalcule con una sola
     # regla uniforme sin casos especiales.
-    quantity: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
 
     reference: Mapped[str | None] = mapped_column(String(300), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
@@ -194,7 +195,7 @@ class StockLevel(Base):
     warehouse_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("warehouses.id"), nullable=False, index=True)
     lot_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("lots.id"), nullable=True)
 
-    quantity: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False, server_default="0")
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False, server_default="0")
 
     # Reserva de stock (spec 8.1, sales: "confirmados, asignación/reserva
     # de stock") — agregado retroactivamente en el cierre de sales.
@@ -202,7 +203,7 @@ class StockLevel(Base):
     # incrementa al confirmar una SalesOrder (StockService.reserve) y se
     # libera/consume al enviar (StockService.ship, que descuenta quantity
     # Y reserved_quantity juntos) o cancelar (StockService.release_reservation).
-    reserved_quantity: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False, server_default="0")
+    reserved_quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False, server_default="0")
 
     # Bloqueo optimista adicional (spec sección 5, Concurrencia: "entidades
     # de alta contención — stock, saldos, contadores — llevan columna

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,7 +51,7 @@ async def get_retention_policy(
         # días) en vez de un 404, porque "sin configurar" es un estado
         # válido y esperado, no un error.
         return schemas.AuditRetentionPolicyRead(
-            company_id=company_id, retention_days=DEFAULT_RETENTION_DAYS, updated_at=datetime.now(timezone.utc),
+            company_id=company_id, retention_days=DEFAULT_RETENTION_DAYS, updated_at=datetime.now(UTC),
         )
     return schemas.AuditRetentionPolicyRead.model_validate(policy)
 

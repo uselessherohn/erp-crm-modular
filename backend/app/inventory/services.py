@@ -282,7 +282,7 @@ class StockService:
             )
             lot_id = lot.id
 
-        sign = Decimal(1) if payload.movement_type in (schemas.MovementTypeEnum.entrada,) else Decimal(-1)
+        sign = Decimal(1) if payload.movement_type == schemas.MovementTypeEnum.entrada else Decimal(-1)
         # 'ajuste' puede ser alza o baja — spec no lo distingue con dos tipos
         # separados, así que se interpreta el signo desde la cantidad misma
         # NO siendo posible (quantity siempre > 0 en el schema); en cambio,

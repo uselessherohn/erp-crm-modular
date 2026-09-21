@@ -41,14 +41,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class PackageEnum(str, enum.Enum):
+class PackageEnum(enum.StrEnum):
     administrative = "administrative"
     medical = "medical"
     pharmacy = "pharmacy"
     web = "web"
 
 
-class PackageStatusEnum(str, enum.Enum):
+class PackageStatusEnum(enum.StrEnum):
     active = "active"
     suspended = "suspended"
     deactivated = "deactivated"
@@ -76,8 +76,8 @@ class Company(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    users: Mapped[list["User"]] = relationship(back_populates="company", lazy="selectin")
-    packages: Mapped[list["CompanyPackage"]] = relationship(back_populates="company", lazy="selectin")
+    users: Mapped[list[User]] = relationship(back_populates="company", lazy="selectin")
+    packages: Mapped[list[CompanyPackage]] = relationship(back_populates="company", lazy="selectin")
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ class Role(Base):
     # porque `RoleService.create_role` gestiona la tabla de asociación
     # insertando `RolePermission` directamente, no a través de esta
     # colección.
-    permissions: Mapped[list["Permission"]] = relationship(
+    permissions: Mapped[list[Permission]] = relationship(
         secondary="role_permissions", lazy="selectin", viewonly=True
     )
 
@@ -138,7 +138,7 @@ class RolePermission(Base):
 
     role_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("roles.id"), primary_key=True)
     permission_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("permissions.id"), primary_key=True)
-    permission: Mapped["Permission"] = relationship(lazy="selectin")
+    permission: Mapped[Permission] = relationship(lazy="selectin")
 
 
 class UserRole(Base):
@@ -149,7 +149,7 @@ class UserRole(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
     role_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("roles.id"), primary_key=True)
 
-    role: Mapped["Role"] = relationship(lazy="selectin")
+    role: Mapped[Role] = relationship(lazy="selectin")
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +208,8 @@ class User(Base):
         UniqueConstraint("email", name="uq_users_email"),
     )
 
-    company: Mapped["Company"] = relationship(back_populates="users", lazy="selectin")
-    roles: Mapped[list["UserRole"]] = relationship(lazy="selectin")
+    company: Mapped[Company] = relationship(back_populates="users", lazy="selectin")
+    roles: Mapped[list[UserRole]] = relationship(lazy="selectin")
 
 
 class UserSession(Base):
@@ -295,7 +295,7 @@ class CompanyPackage(Base):
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
-    company: Mapped["Company"] = relationship(back_populates="packages", lazy="selectin")
+    company: Mapped[Company] = relationship(back_populates="packages", lazy="selectin")
 
     __table_args__ = (
         UniqueConstraint("company_id", "package", name="uq_company_packages_company_package"),
@@ -364,7 +364,7 @@ class IdempotencyKey(Base):
 # empresa+tipo, o SELECT ... FOR UPDATE sobre tabla de contadores."
 # Se elige la tabla de contadores (no una secuencia de Postgres por
 # empresa+tipo) porque las secuencias son objetos DDL — crear una por cada
-# combinación empresa×tipo_de_documento requeriría DDL dinámico en
+# combinación empresa x tipo_de_documento requeriría DDL dinámico en
 # runtime, frágil y difícil de versionar en Alembic. Una tabla de filas es
 # el mismo patrón de concurrencia (SELECT FOR UPDATE) sin ese problema.
 # ---------------------------------------------------------------------------

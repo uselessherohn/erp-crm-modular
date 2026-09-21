@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_company_id, get_db_with_tenant_context, require_package, require_permission
 from app.core.models import User
 from app.pharmacy import schemas
-from app.purchasing import schemas as purchasing_schemas
 from app.pharmacy.services import (
     ControlledSubstanceLogService,
     ControlledSubstanceService,
@@ -26,6 +25,7 @@ from app.pharmacy.services import (
     ReorderPointService,
     ReorderSuggestionService,
 )
+from app.purchasing import schemas as purchasing_schemas
 
 router = APIRouter(prefix="/pharmacy", tags=["pharmacy"], dependencies=[Depends(require_package("pharmacy"))])
 

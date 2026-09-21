@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class DispensationStatusEnum(str, Enum):
+class DispensationStatusEnum(StrEnum):
     dispensed = "dispensed"
     voided = "voided"
 
 
-class AllergyCheckSourceEnum(str, Enum):
+class AllergyCheckSourceEnum(StrEnum):
     medical_record = "medical_record"
     form = "form"
 
@@ -36,7 +36,7 @@ class DispensationOrderCreate(BaseModel):
     lines: list[DispensationLineRequest] = Field(..., min_length=1)
 
     @model_validator(mode="after")
-    def _prescription_xor_walkin(self) -> "DispensationOrderCreate":
+    def _prescription_xor_walkin(self) -> DispensationOrderCreate:
         if self.prescription_id is not None and self.walk_in_reference is not None:
             raise ValueError("prescription_id y walk_in_reference son mutuamente excluyentes")
         return self
@@ -99,13 +99,13 @@ class ControlledSubstanceLogEntryRead(BaseModel):
 # ---------------------------------------------------------------------------
 # Módulo 21 — MTM / Consulta Farmacéutica. Ver DED-62/63/64 en models.py.
 # ---------------------------------------------------------------------------
-class MtmSessionStatusEnum(str, Enum):
+class MtmSessionStatusEnum(StrEnum):
     open = "open"
     closed = "closed"
     cancelled = "cancelled"
 
 
-class MtmBillingModeEnum(str, Enum):
+class MtmBillingModeEnum(StrEnum):
     accounting_invoice = "accounting_invoice"
     simple_receipt = "simple_receipt"
 
@@ -226,7 +226,7 @@ class ReorderPurchaseOrderGenerate(BaseModel):
     lines: list[ReorderPurchaseOrderLineInput] = Field(..., min_length=1)
 
 
-class InteractionSeverityEnum(str, Enum):
+class InteractionSeverityEnum(StrEnum):
     moderate = "moderate"
     major = "major"
 
@@ -271,7 +271,7 @@ class InteractionCheckResult(BaseModel):
 # ---------------------------------------------------------------------------------------------
 # Módulo 18 — Aseguradoras [extendido]. Ver DED-62 a DED-64 en models.py.
 # ---------------------------------------------------------------------------------------------
-class InsuranceClaimStatusEnum(str, Enum):
+class InsuranceClaimStatusEnum(StrEnum):
     pending = "pending"
     submitted = "submitted"
     approved = "approved"
@@ -319,7 +319,7 @@ class InsuranceClaimCreate(BaseModel):
     amount_claimed_insurer: Decimal = Field(..., ge=0)
 
     @model_validator(mode="after")
-    def _validate_sum(self) -> "InsuranceClaimCreate":
+    def _validate_sum(self) -> InsuranceClaimCreate:
         if self.amount_patient_copay + self.amount_claimed_insurer != self.amount_total:
             raise ValueError("amount_patient_copay + amount_claimed_insurer debe ser igual a amount_total")
         return self

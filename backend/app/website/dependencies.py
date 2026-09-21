@@ -12,6 +12,8 @@ resolución a subdominio/dominio el día que se confirme NO debería tocar
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +23,7 @@ from app.database import AsyncSessionLocal
 from app.shared.exceptions import PackageNotLicensedError
 
 
-async def get_public_db_context(company_id: int) -> AsyncSession:
+async def get_public_db_context(company_id: int) -> AsyncIterator[AsyncSession]:
     """Igual que `get_db_with_tenant_context`, pero sin pasar por
     `get_current_user` (no hay JWT en una request anónima del storefront).
     RLS sigue aplicando normal — se fija `app.current_company_id` con el

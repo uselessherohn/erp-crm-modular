@@ -7,13 +7,13 @@ normal. Placeholder temporal hasta que exista un panel de superadmin real
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core import schemas
 from app.core.services import CompanyService
 from app.database import get_db
 from app.shared.exceptions import PermissionDeniedError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/internal/companies", tags=["internal"])
 

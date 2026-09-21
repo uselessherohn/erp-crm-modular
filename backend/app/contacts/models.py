@@ -19,7 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 

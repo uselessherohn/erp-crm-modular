@@ -56,7 +56,7 @@ class PriceList(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    items: Mapped[list["PriceListItem"]] = relationship(back_populates="price_list", lazy="selectin", cascade="all, delete-orphan")
+    items: Mapped[list[PriceListItem]] = relationship(back_populates="price_list", lazy="selectin", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("company_id", "name", name="uq_price_lists_company_name"),
@@ -74,7 +74,7 @@ class PriceListItem(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     min_quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False, server_default="1")
 
-    price_list: Mapped["PriceList"] = relationship(back_populates="items", lazy="selectin")
+    price_list: Mapped[PriceList] = relationship(back_populates="items", lazy="selectin")
 
     __table_args__ = (
         CheckConstraint("unit_price >= 0", name="ck_price_list_items_unit_price_nonneg"),
@@ -86,7 +86,7 @@ class PriceListItem(Base):
 # ---------------------------------------------------------------------------
 # Cotizaciones [core]
 # ---------------------------------------------------------------------------
-class QuoteStatusEnum(str, enum.Enum):
+class QuoteStatusEnum(enum.StrEnum):
     draft = "draft"
     sent = "sent"
     accepted = "accepted"
@@ -115,7 +115,7 @@ class Quote(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
 
-    lines: Mapped[list["QuoteLine"]] = relationship(back_populates="quote", lazy="selectin", cascade="all, delete-orphan")
+    lines: Mapped[list[QuoteLine]] = relationship(back_populates="quote", lazy="selectin", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint(
@@ -137,7 +137,7 @@ class QuoteLine(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
 
-    quote: Mapped["Quote"] = relationship(back_populates="lines", lazy="selectin")
+    quote: Mapped[Quote] = relationship(back_populates="lines", lazy="selectin")
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_quote_lines_quantity_positive"),
@@ -148,7 +148,7 @@ class QuoteLine(Base):
 # ---------------------------------------------------------------------------
 # Órdenes de Venta [core]
 # ---------------------------------------------------------------------------
-class SalesOrderStatusEnum(str, enum.Enum):
+class SalesOrderStatusEnum(enum.StrEnum):
     draft = "draft"
     confirmed = "confirmed"
     en_preparacion = "en_preparacion"
@@ -176,7 +176,7 @@ class SalesOrder(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
 
-    lines: Mapped[list["SalesOrderLine"]] = relationship(back_populates="sales_order", lazy="selectin", cascade="all, delete-orphan")
+    lines: Mapped[list[SalesOrderLine]] = relationship(back_populates="sales_order", lazy="selectin", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint(
@@ -199,7 +199,7 @@ class SalesOrderLine(Base):
     quantity_shipped: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False, server_default="0")
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
 
-    sales_order: Mapped["SalesOrder"] = relationship(back_populates="lines", lazy="selectin")
+    sales_order: Mapped[SalesOrder] = relationship(back_populates="lines", lazy="selectin")
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_sales_order_lines_quantity_positive"),

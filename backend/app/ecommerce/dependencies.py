@@ -8,6 +8,8 @@ compartida en vez de seguir duplicándolo.
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +19,7 @@ from app.database import AsyncSessionLocal
 from app.shared.exceptions import PackageNotLicensedError
 
 
-async def get_public_db_context(company_id: int) -> AsyncSession:
+async def get_public_db_context(company_id: int) -> AsyncIterator[AsyncSession]:
     async with AsyncSessionLocal() as session:
         await session.execute(
             text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_id)}

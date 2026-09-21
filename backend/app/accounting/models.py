@@ -76,7 +76,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
-
 # ---------------------------------------------------------------------------
 # Enums Python (solo para tipado/legibilidad — la validación real vive en
 # los CHECK constraints de String, mismo patrón que purchasing/sales, NO
@@ -85,7 +84,7 @@ from app.database import Base
 # ---------------------------------------------------------------------------
 
 
-class AccountTypeEnum(str, enum.Enum):
+class AccountTypeEnum(enum.StrEnum):
     receivable = "receivable"      # cuentas por cobrar
     payable = "payable"            # cuentas por pagar
     income = "income"              # ingresos
@@ -97,7 +96,7 @@ class AccountTypeEnum(str, enum.Enum):
 ACCOUNT_TYPES = tuple(t.value for t in AccountTypeEnum)
 
 
-class DocumentTypeEnum(str, enum.Enum):
+class DocumentTypeEnum(enum.StrEnum):
     sales_invoice = "sales_invoice"
     purchase_invoice = "purchase_invoice"
     sales_credit_note = "sales_credit_note"
@@ -111,12 +110,12 @@ class DocumentTypeEnum(str, enum.Enum):
 DOCUMENT_TYPES = tuple(t.value for t in DocumentTypeEnum)
 
 
-class DirectionEnum(str, enum.Enum):
+class DirectionEnum(enum.StrEnum):
     sale = "sale"
     purchase = "purchase"
 
 
-class InvoiceStatusEnum(str, enum.Enum):
+class InvoiceStatusEnum(enum.StrEnum):
     draft = "draft"
     posted = "posted"
     partially_paid = "partially_paid"
@@ -124,18 +123,18 @@ class InvoiceStatusEnum(str, enum.Enum):
     cancelled = "cancelled"
 
 
-class NoteTypeEnum(str, enum.Enum):
+class NoteTypeEnum(enum.StrEnum):
     credit = "credit"
     debit = "debit"
 
 
-class NoteStatusEnum(str, enum.Enum):
+class NoteStatusEnum(enum.StrEnum):
     draft = "draft"
     posted = "posted"
     cancelled = "cancelled"
 
 
-class PaymentMethodEnum(str, enum.Enum):
+class PaymentMethodEnum(enum.StrEnum):
     cash = "cash"
     bank_transfer = "bank_transfer"
     card = "card"
@@ -143,7 +142,7 @@ class PaymentMethodEnum(str, enum.Enum):
     other = "other"
 
 
-class PaymentStatusEnum(str, enum.Enum):
+class PaymentStatusEnum(enum.StrEnum):
     draft = "draft"
     posted = "posted"
     cancelled = "cancelled"
@@ -243,7 +242,7 @@ class JournalEntry(Base):
         CheckConstraint("total_debit >= 0 AND total_credit >= 0", name="ck_journal_entries_nonneg"),
     )
 
-    lines: Mapped[list["JournalLine"]] = relationship(back_populates="journal_entry", lazy="selectin")
+    lines: Mapped[list[JournalLine]] = relationship(back_populates="journal_entry", lazy="selectin")
 
 
 class JournalLine(Base):
@@ -269,7 +268,7 @@ class JournalLine(Base):
         ),
     )
 
-    journal_entry: Mapped["JournalEntry"] = relationship(back_populates="lines", lazy="selectin")
+    journal_entry: Mapped[JournalEntry] = relationship(back_populates="lines", lazy="selectin")
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +358,7 @@ class Invoice(Base):
         UniqueConstraint("company_id", "number", name="uq_invoices_company_number"),
     )
 
-    lines: Mapped[list["InvoiceLine"]] = relationship(
+    lines: Mapped[list[InvoiceLine]] = relationship(
         back_populates="invoice", lazy="selectin", cascade="all, delete-orphan"
     )
 
@@ -390,7 +389,7 @@ class InvoiceLine(Base):
         ),
     )
 
-    invoice: Mapped["Invoice"] = relationship(back_populates="lines", lazy="selectin")
+    invoice: Mapped[Invoice] = relationship(back_populates="lines", lazy="selectin")
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +440,7 @@ class CreditDebitNote(Base):
         UniqueConstraint("company_id", "number", name="uq_credit_debit_notes_company_number"),
     )
 
-    lines: Mapped[list["CreditDebitNoteLine"]] = relationship(
+    lines: Mapped[list[CreditDebitNoteLine]] = relationship(
         back_populates="note", lazy="selectin", cascade="all, delete-orphan"
     )
 
@@ -472,7 +471,7 @@ class CreditDebitNoteLine(Base):
         ),
     )
 
-    note: Mapped["CreditDebitNote"] = relationship(back_populates="lines", lazy="selectin")
+    note: Mapped[CreditDebitNote] = relationship(back_populates="lines", lazy="selectin")
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +519,7 @@ class Payment(Base):
         UniqueConstraint("company_id", "number", name="uq_payments_company_number"),
     )
 
-    allocations: Mapped[list["PaymentAllocation"]] = relationship(
+    allocations: Mapped[list[PaymentAllocation]] = relationship(
         back_populates="payment", lazy="selectin", cascade="all, delete-orphan"
     )
 
@@ -546,4 +545,4 @@ class PaymentAllocation(Base):
         CheckConstraint("amount_applied > 0", name="ck_payment_allocations_amount_positive"),
     )
 
-    payment: Mapped["Payment"] = relationship(back_populates="allocations", lazy="selectin")
+    payment: Mapped[Payment] = relationship(back_populates="allocations", lazy="selectin")

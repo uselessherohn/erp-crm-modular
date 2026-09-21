@@ -9,7 +9,7 @@ estos son los contratos de entrada/salida que los servicios usarán.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -17,14 +17,14 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 # ---------------------------------------------------------------------------
 # Enums compartidos (mismos valores que app.core.models)
 # ---------------------------------------------------------------------------
-class PackageEnum(str, Enum):
+class PackageEnum(StrEnum):
     administrative = "administrative"
     medical = "medical"
     pharmacy = "pharmacy"
     web = "web"
 
 
-class PackageStatusEnum(str, Enum):
+class PackageStatusEnum(StrEnum):
     active = "active"
     suspended = "suspended"
     deactivated = "deactivated"

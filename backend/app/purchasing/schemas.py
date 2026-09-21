@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class PurchaseOrderStatusEnum(str, Enum):
+class PurchaseOrderStatusEnum(StrEnum):
     draft = "draft"
     confirmed = "confirmed"
     received = "received"
@@ -30,7 +30,7 @@ class PurchaseOrderCreate(BaseModel):
     lines: list[PurchaseOrderLineCreate] = Field(..., min_length=1)
 
     @model_validator(mode="after")
-    def unique_products(self) -> "PurchaseOrderCreate":
+    def unique_products(self) -> PurchaseOrderCreate:
         product_ids = [line.product_id for line in self.lines]
         if len(product_ids) != len(set(product_ids)):
             raise ValueError("No se puede repetir el mismo producto en dos líneas — sumá la cantidad en una sola")

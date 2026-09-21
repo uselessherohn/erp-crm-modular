@@ -1,10 +1,12 @@
 import asyncio
 import secrets
-from app import models_registry  # noqa: F401  (registra todos los modelos — ver ese módulo)
-from app.database import AsyncSessionLocal
-from app.core import models, security
-from app.ecommerce import models as ecommerce_models
+
 from sqlalchemy import select, text
+
+from app import models_registry  # noqa: F401  (registra todos los modelos — ver ese módulo)
+from app.core import models, security
+from app.database import AsyncSessionLocal
+from app.ecommerce import models as ecommerce_models
 
 
 async def bootstrap():

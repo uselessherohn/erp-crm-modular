@@ -73,7 +73,7 @@ async def get_public_catalog(company_id: int, db: AsyncSession = Depends(get_pub
 async def create_cart(company_id: int, db: AsyncSession = Depends(get_public_db_context)) -> schemas.CartCreated:
     await ensure_ecommerce_active(db, company_id=company_id)
     cart, token = await CartService.create_cart(db, company_id=company_id)
-    serialized = await CartService._serialize(db, cart)  # noqa: SLF001 — mismo módulo, no hay getter público redundante
+    serialized = await CartService._serialize(db, cart)
     return schemas.CartCreated(**serialized.model_dump(), session_token=token)
 
 
@@ -142,7 +142,7 @@ async def payment_webhook(
     raw_body = await request.body()
     try:
         payload = await request.json()
-    except Exception as exc:  # noqa: BLE001 — cualquier body no-JSON es un error de validación del caller
+    except Exception as exc:
         raise ValidationError("Body del webhook no es JSON válido") from exc
 
     return await WebhookService.handle_payment_event(

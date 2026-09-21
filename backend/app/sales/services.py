@@ -26,7 +26,7 @@ ampliación aditiva de comportamiento, no de contrato).
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -109,7 +109,7 @@ class QuoteService:
             await ProductService.get(db, company_id=company_id, product_id=line.product_id)
 
         number = await DocumentNumberingService.next_number(
-            db, company_id=company_id, doc_type="quote", prefix="QT", year=datetime.now(timezone.utc).year
+            db, company_id=company_id, doc_type="quote", prefix="QT", year=datetime.now(UTC).year
         )
         quote = models.Quote(
             company_id=company_id,
@@ -243,7 +243,7 @@ class SalesOrderService:
             await ProductService.get(db, company_id=company_id, product_id=line.product_id)
 
         number = await DocumentNumberingService.next_number(
-            db, company_id=company_id, doc_type="sales_order", prefix="SO", year=datetime.now(timezone.utc).year
+            db, company_id=company_id, doc_type="sales_order", prefix="SO", year=datetime.now(UTC).year
         )
         order = models.SalesOrder(
             company_id=company_id,

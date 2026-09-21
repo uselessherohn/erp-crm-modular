@@ -135,9 +135,8 @@ async def update_employee(
     mismo criterio que la lectura DED-21 y que `contacts:contact:
     update_credit_limit`) — editar el sueldo de alguien no debería ser
     el mismo permiso que corregirle el teléfono."""
-    if "salary" in payload.model_fields_set:
-        if not await user_has_permission(db, user_id=actor.id, code="hr:employee:update-sensitive"):
-            raise ValidationError("No tenés permiso para editar el salario (hr:employee:update-sensitive)")
+    if "salary" in payload.model_fields_set and not await user_has_permission(db, user_id=actor.id, code="hr:employee:update-sensitive"):
+        raise ValidationError("No tenés permiso para editar el salario (hr:employee:update-sensitive)")
 
     employee = await EmployeeService.update(db, company_id=company_id, employee_id=employee_id, payload=payload, updated_by=actor.id)
     return await _mask_sensitive(db, actor=actor, employee=schemas.EmployeeRead.model_validate(employee))

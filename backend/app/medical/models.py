@@ -79,7 +79,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
-class ClinicalRecordEntryTypeEnum(str, enum.Enum):
+class ClinicalRecordEntryTypeEnum(enum.StrEnum):
     antecedent = "antecedent"
     allergy = "allergy"
     diagnosis = "diagnosis"
@@ -89,7 +89,7 @@ class ClinicalRecordEntryTypeEnum(str, enum.Enum):
 CLINICAL_RECORD_ENTRY_TYPES = tuple(t.value for t in ClinicalRecordEntryTypeEnum)
 
 
-class AppointmentStatusEnum(str, enum.Enum):
+class AppointmentStatusEnum(enum.StrEnum):
     scheduled = "scheduled"
     confirmed = "confirmed"
     completed = "completed"
@@ -241,7 +241,7 @@ class Consultation(Base):
 #   Farmacéutico después de tener recetas ya emitidas con `pharmacy`
 #   inactivo en ese momento.
 # ---------------------------------------------------------------------------
-class PrescriptionDispensingStatusEnum(str, enum.Enum):
+class PrescriptionDispensingStatusEnum(enum.StrEnum):
     not_applicable = "not_applicable"
     pending = "pending"
     dispensed = "dispensed"
@@ -324,7 +324,7 @@ class PrescriptionLine(Base):
 #   `AttachmentService` en `app/core/services.py`, primer consumidor real
 #   de esa tabla genérica.
 # ---------------------------------------------------------------------------
-class LabOrderStatusEnum(str, enum.Enum):
+class LabOrderStatusEnum(enum.StrEnum):
     ordered = "ordered"
     completed = "completed"
     cancelled = "cancelled"
@@ -333,7 +333,7 @@ class LabOrderStatusEnum(str, enum.Enum):
 LAB_ORDER_STATUSES = tuple(s.value for s in LabOrderStatusEnum)
 
 
-class LabOrderTestStatusEnum(str, enum.Enum):
+class LabOrderTestStatusEnum(enum.StrEnum):
     pending = "pending"
     resulted = "resulted"
 
@@ -416,7 +416,7 @@ class LabOrderTest(Base):
 #   que no están definidas en ningún AMB de este proyecto. Se guarda
 #   únicamente metadata de la sesión (horarios, estado, URL de sala).
 # ---------------------------------------------------------------------------------
-class TeleconsultationStatusEnum(str, enum.Enum):
+class TeleconsultationStatusEnum(enum.StrEnum):
     scheduled = "scheduled"
     active = "active"
     ended = "ended"
@@ -488,7 +488,7 @@ class TeleconsultationSession(Base):
 #   tarde: los recibos simples emitidos antes de esa activación no se
 #   migran retroactivamente a asientos contables en este cierre.
 # ---------------------------------------------------------------------------
-class MedicalBillingModeEnum(str, enum.Enum):
+class MedicalBillingModeEnum(enum.StrEnum):
     accounting_invoice = "accounting_invoice"
     simple_receipt = "simple_receipt"
 
@@ -496,7 +496,7 @@ class MedicalBillingModeEnum(str, enum.Enum):
 MEDICAL_BILLING_MODES = tuple(m.value for m in MedicalBillingModeEnum)
 
 
-class MedicalBillingStatusEnum(str, enum.Enum):
+class MedicalBillingStatusEnum(enum.StrEnum):
     issued = "issued"
     cancelled = "cancelled"
 
@@ -577,7 +577,7 @@ class MedicalBillingRecord(Base):
 #   código ya cerrado y probado del módulo 11 en este cierre. Declarado
 #   como TODO explícito, no una omisión silenciosa.
 # ---------------------------------------------------------------------------
-class PatientMessageSenderRoleEnum(str, enum.Enum):
+class PatientMessageSenderRoleEnum(enum.StrEnum):
     professional = "professional"
     patient = "patient"
 

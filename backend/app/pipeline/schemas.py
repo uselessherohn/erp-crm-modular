@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class OpportunityStatusEnum(str, Enum):
+class OpportunityStatusEnum(StrEnum):
     open = "open"
     won = "won"
     lost = "lost"
 
 
-class ActivityTypeEnum(str, Enum):
+class ActivityTypeEnum(StrEnum):
     call = "call"
     email = "email"
     meeting = "meeting"

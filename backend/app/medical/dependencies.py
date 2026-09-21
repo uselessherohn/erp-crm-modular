@@ -11,6 +11,8 @@ activos, no uno u otro.
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +22,7 @@ from app.database import AsyncSessionLocal
 from app.shared.exceptions import PackageNotLicensedError, PackageSuspendedError
 
 
-async def get_public_db_context(company_id: int) -> AsyncSession:
+async def get_public_db_context(company_id: int) -> AsyncIterator[AsyncSession]:
     """Idéntico en propósito a `website.dependencies.get_public_db_context`
     (sin JWT, RLS fijado con el `company_id` explícito de la URL) —
     duplicado en vez de importado desde `website` para no crear una

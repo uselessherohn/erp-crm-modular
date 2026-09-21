@@ -4,12 +4,12 @@ DEDUCIBLE (DED-45 a DED-50).
 """
 from __future__ import annotations
 
+import abc
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy import func as sa_func
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +17,6 @@ from app.contacts.models import Contact
 from app.contacts.services import ContactService
 from app.core.services import AuditService, DocumentNumberingService
 from app.inventory import models as inventory_models
-from app.inventory.models import Warehouse
 from app.inventory.services import ProductService, StockService, WarehouseService
 from app.pharmacy import models, schemas
 from app.shared.exceptions import ConflictError, NotFoundError, PackageNotLicensedError, ValidationError
@@ -235,7 +234,7 @@ class DispensationService:
             allergy_check_notes=order.allergy_check_notes, payment_method=order.payment_method,
             amount_charged=order.amount_charged, status=order.status, voided_at=order.voided_at,
             void_reason=order.void_reason, dispensed_at=order.dispensed_at,
-            lines=[schemas.DispensationLineRead.model_validate(l) for l in lines],
+            lines=[schemas.DispensationLineRead.model_validate(line) for line in lines],
         )
 
     @staticmethod
@@ -416,7 +415,7 @@ class MtmSessionService:
                     source_document_type="pharmacy_mtm_session",
                     source_document_id=session.id,
                     lines=[accounting_schemas.InvoiceLineCreate(
-                        description="Consulta farmacéutica (MTM)", quantity=Decimal("1"),
+                        description="Consulta farmacéutica (MTM)", quantity=Decimal(1),
                         unit_price=session.fee_amount, tax_rate_id=payload.tax_rate_id,
                     )],
                 ),
@@ -591,7 +590,7 @@ class ReorderSuggestionService:
 
         suggestions: list[schemas.ReorderSuggestionRead] = []
         for point in points:
-            available = available_by_product.get(point.product_id, Decimal("0"))
+            available = available_by_product.get(point.product_id, Decimal(0))
             if available <= point.reorder_point:
                 suggestions.append(schemas.ReorderSuggestionRead(
                     product_id=point.product_id, warehouse_id=point.warehouse_id,
@@ -650,7 +649,6 @@ class ReorderSuggestionService:
 # ---------------------------------------------------------------------------------
 # Módulo 17 — Interacciones [extendido]. Ver DED-58 a DED-61 en models.py.
 # ---------------------------------------------------------------------------------------------
-import abc
 
 
 def _normalize_ingredient(name: str) -> str:
@@ -956,7 +954,7 @@ class InsuranceClaimService:
                     source_document_id=claim.id,
                     lines=[accounting_schemas.InvoiceLineCreate(
                         description=f"Reclamo de seguro {claim.claim_number} — dispensación {order.document_number}",
-                        quantity=Decimal("1"), unit_price=claim.amount_claimed_insurer,
+                        quantity=Decimal(1), unit_price=claim.amount_claimed_insurer,
                     )],
                 ),
                 created_by=actor_id,

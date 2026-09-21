@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class ClinicalRecordEntryTypeEnum(str, Enum):
+class ClinicalRecordEntryTypeEnum(StrEnum):
     antecedent = "antecedent"
     allergy = "allergy"
     diagnosis = "diagnosis"
     note = "note"
 
 
-class AppointmentStatusEnum(str, Enum):
+class AppointmentStatusEnum(StrEnum):
     scheduled = "scheduled"
     confirmed = "confirmed"
     completed = "completed"
@@ -57,7 +57,7 @@ class AppointmentCreate(BaseModel):
     reason: str | None = Field(None, max_length=500)
 
     @model_validator(mode="after")
-    def _end_after_start(self) -> "AppointmentCreate":
+    def _end_after_start(self) -> AppointmentCreate:
         if self.scheduled_end <= self.scheduled_start:
             raise ValueError("scheduled_end debe ser posterior a scheduled_start")
         return self
@@ -69,7 +69,7 @@ class AppointmentReschedule(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
 
     @model_validator(mode="after")
-    def _end_after_start(self) -> "AppointmentReschedule":
+    def _end_after_start(self) -> AppointmentReschedule:
         if self.scheduled_end <= self.scheduled_start:
             raise ValueError("scheduled_end debe ser posterior a scheduled_start")
         return self
@@ -136,7 +136,7 @@ class ConsultationRead(BaseModel):
 # ---------------------------------------------------------------------------
 # Módulo 10 — Recetas
 # ---------------------------------------------------------------------------
-class PrescriptionDispensingStatusEnum(str, Enum):
+class PrescriptionDispensingStatusEnum(StrEnum):
     not_applicable = "not_applicable"
     pending = "pending"
     dispensed = "dispensed"
@@ -188,13 +188,13 @@ class PrescriptionRead(BaseModel):
 # ---------------------------------------------------------------------------
 # Módulo 11 — Laboratorio
 # ---------------------------------------------------------------------------
-class LabOrderStatusEnum(str, Enum):
+class LabOrderStatusEnum(StrEnum):
     ordered = "ordered"
     completed = "completed"
     cancelled = "cancelled"
 
 
-class LabOrderTestStatusEnum(str, Enum):
+class LabOrderTestStatusEnum(StrEnum):
     pending = "pending"
     resulted = "resulted"
 
@@ -254,7 +254,7 @@ class AttachmentRead(BaseModel):
 # ---------------------------------------------------------------------------------
 # Módulo 12 — Teleconsulta
 # ---------------------------------------------------------------------------
-class TeleconsultationStatusEnum(str, Enum):
+class TeleconsultationStatusEnum(StrEnum):
     scheduled = "scheduled"
     active = "active"
     ended = "ended"
@@ -285,12 +285,12 @@ class TeleconsultationSessionRead(BaseModel):
 # ---------------------------------------------------------------------------------
 # Módulo 13 — Facturación Médica Básica
 # ---------------------------------------------------------------------------
-class MedicalBillingModeEnum(str, Enum):
+class MedicalBillingModeEnum(StrEnum):
     accounting_invoice = "accounting_invoice"
     simple_receipt = "simple_receipt"
 
 
-class MedicalBillingStatusEnum(str, Enum):
+class MedicalBillingStatusEnum(StrEnum):
     issued = "issued"
     cancelled = "cancelled"
 
@@ -330,7 +330,7 @@ class MedicalBillingRecordRead(BaseModel):
 # ---------------------------------------------------------------------------
 # Módulo 14 — Portal / Mensajería Paciente-Médico
 # ---------------------------------------------------------------------------
-class PatientMessageSenderRoleEnum(str, Enum):
+class PatientMessageSenderRoleEnum(StrEnum):
     professional = "professional"
     patient = "patient"
 
@@ -378,13 +378,13 @@ class PublicBookingCreate(BaseModel):
     patient_phone: str | None = Field(None, max_length=50)
 
     @model_validator(mode="after")
-    def _end_after_start(self) -> "PublicBookingCreate":
+    def _end_after_start(self) -> PublicBookingCreate:
         if self.scheduled_end <= self.scheduled_start:
             raise ValueError("scheduled_end debe ser posterior a scheduled_start")
         return self
 
     @model_validator(mode="after")
-    def _contact_method_required(self) -> "PublicBookingCreate":
+    def _contact_method_required(self) -> PublicBookingCreate:
         if not self.patient_email and not self.patient_phone:
             raise ValueError("Se requiere al menos un email o teléfono de contacto")
         return self

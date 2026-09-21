@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class AccountTypeEnum(str, Enum):
+class AccountTypeEnum(StrEnum):
     receivable = "receivable"
     payable = "payable"
     income = "income"
@@ -16,7 +16,7 @@ class AccountTypeEnum(str, Enum):
     adjustment = "adjustment"
 
 
-class DocumentTypeEnum(str, Enum):
+class DocumentTypeEnum(StrEnum):
     sales_invoice = "sales_invoice"
     purchase_invoice = "purchase_invoice"
     sales_credit_note = "sales_credit_note"
@@ -27,12 +27,12 @@ class DocumentTypeEnum(str, Enum):
     payment_made = "payment_made"
 
 
-class DirectionEnum(str, Enum):
+class DirectionEnum(StrEnum):
     sale = "sale"
     purchase = "purchase"
 
 
-class InvoiceStatusEnum(str, Enum):
+class InvoiceStatusEnum(StrEnum):
     draft = "draft"
     posted = "posted"
     partially_paid = "partially_paid"
@@ -40,18 +40,18 @@ class InvoiceStatusEnum(str, Enum):
     cancelled = "cancelled"
 
 
-class NoteTypeEnum(str, Enum):
+class NoteTypeEnum(StrEnum):
     credit = "credit"
     debit = "debit"
 
 
-class NoteStatusEnum(str, Enum):
+class NoteStatusEnum(StrEnum):
     draft = "draft"
     posted = "posted"
     cancelled = "cancelled"
 
 
-class PaymentMethodEnum(str, Enum):
+class PaymentMethodEnum(StrEnum):
     cash = "cash"
     bank_transfer = "bank_transfer"
     card = "card"
@@ -59,7 +59,7 @@ class PaymentMethodEnum(str, Enum):
     other = "other"
 
 
-class PaymentStatusEnum(str, Enum):
+class PaymentStatusEnum(StrEnum):
     draft = "draft"
     posted = "posted"
     cancelled = "cancelled"
@@ -166,7 +166,7 @@ class TaxRateRead(BaseModel):
 
 class InvoiceLineCreate(BaseModel):
     description: str = Field(..., max_length=300)
-    quantity: Decimal = Field(default=Decimal("1"), gt=0)
+    quantity: Decimal = Field(default=Decimal(1), gt=0)
     unit_price: Decimal = Field(..., ge=0)
     tax_rate_id: int | None = None
 
@@ -224,7 +224,7 @@ class InvoiceRead(BaseModel):
 
 class CreditDebitNoteLineCreate(BaseModel):
     description: str = Field(..., max_length=300)
-    quantity: Decimal = Field(default=Decimal("1"), gt=0)
+    quantity: Decimal = Field(default=Decimal(1), gt=0)
     unit_price: Decimal = Field(..., ge=0)
     tax_rate_id: int | None = None
 
@@ -292,8 +292,8 @@ class PaymentCreate(BaseModel):
     allocations: list[PaymentAllocationCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def allocations_do_not_exceed_amount(self) -> "PaymentCreate":
-        total_allocated = sum((a.amount_applied for a in self.allocations), Decimal("0"))
+    def allocations_do_not_exceed_amount(self) -> PaymentCreate:
+        total_allocated = sum((a.amount_applied for a in self.allocations), Decimal(0))
         if total_allocated > self.amount:
             raise ValueError("La suma de las asignaciones no puede superar el monto del pago")
         return self

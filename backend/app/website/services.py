@@ -8,7 +8,7 @@ en producción (subdominio/dominio propio), no resuelto en este cierre.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,7 +98,7 @@ class PageService:
         if page.status == "published":
             raise ValidationError(f"La página {page_id} ya está publicada")
         page.status = "published"
-        page.published_at = datetime.now(timezone.utc)
+        page.published_at = datetime.now(UTC)
         page.updated_by = updated_by
         await db.flush()
 

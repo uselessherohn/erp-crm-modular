@@ -13,18 +13,18 @@ Cualquier script o entrypoint que no pase por `app.main` (que sí importa
 todo vía los routers) debe importar este módulo primero, no los módulos
 de modelos sueltos.
 """
-from app.core import models as core_models  # noqa: F401
-from app.contacts import models as contacts_models  # noqa: F401
-from app.inventory import models as inventory_models  # noqa: F401
-from app.purchasing import models as purchasing_models  # noqa: F401
-from app.sales import models as sales_models  # noqa: F401
 from app.accounting import models as accounting_models  # noqa: F401
-from app.pipeline import models as pipeline_models  # noqa: F401
+from app.audit import models as audit_models  # noqa: F401
+from app.contacts import models as contacts_models  # noqa: F401
+from app.core import models as core_models  # noqa: F401
+from app.ecommerce import models as ecommerce_models  # noqa: F401
 from app.hr import models as hr_models  # noqa: F401
+from app.inventory import models as inventory_models  # noqa: F401
 from app.medical import models as medical_models  # noqa: F401
 from app.notifications import models as notifications_models  # noqa: F401
-from app.website import models as website_models  # noqa: F401
-from app.ecommerce import models as ecommerce_models  # noqa: F401
-from app.reports import models as reports_models  # noqa: F401
 from app.pharmacy import models as pharmacy_models  # noqa: F401
-from app.audit import models as audit_models  # noqa: F401
+from app.pipeline import models as pipeline_models  # noqa: F401
+from app.purchasing import models as purchasing_models  # noqa: F401
+from app.reports import models as reports_models  # noqa: F401
+from app.sales import models as sales_models  # noqa: F401
+from app.website import models as website_models  # noqa: F401

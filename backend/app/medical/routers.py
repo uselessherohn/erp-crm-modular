@@ -30,6 +30,7 @@ from app.core.dependencies import (
 )
 from app.core.models import User
 from app.core.services import AttachmentService
+from app.medical import models as medical_models
 from app.medical import schemas
 from app.medical.dependencies import ensure_public_booking_active, get_public_db_context
 from app.medical.services import (
@@ -45,7 +46,6 @@ from app.medical.services import (
     get_by_appointment,
     professional_has_treated,
 )
-from app.medical import models as medical_models
 from app.shared.exceptions import NotFoundError, PermissionDeniedError
 
 router = APIRouter(prefix="/medical", tags=["medical"], dependencies=[Depends(require_package("medical"))])

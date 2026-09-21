@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class ProductTypeEnum(str, Enum):
+class ProductTypeEnum(StrEnum):
     facturable = "facturable"
     consumible = "consumible"
     servicio = "servicio"
 
 
-class MovementTypeEnum(str, Enum):
+class MovementTypeEnum(StrEnum):
     entrada = "entrada"
     salida = "salida"
     ajuste = "ajuste"
@@ -107,7 +107,7 @@ class TransferCreate(BaseModel):
     reference: str | None = Field(None, max_length=300)
 
     @model_validator(mode="after")
-    def different_warehouses(self) -> "TransferCreate":
+    def different_warehouses(self) -> TransferCreate:
         if self.source_warehouse_id == self.destination_warehouse_id:
             raise ValueError("El almacén de origen y destino no pueden ser el mismo")
         return self
