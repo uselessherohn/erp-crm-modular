@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import JWTError, jwt
@@ -30,8 +30,24 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(*, user_id: int, company_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
-    payload = {"sub": str(user_id), "company_id": company_id, "type": "access", "exp": expire}
+    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    # `jti` (JWT ID, RFC 7519 §4.1.7) — nonce aleatorio de un solo uso.
+    # BUG REAL encontrado por la suite de calidad externa (sep-2026,
+    # test_full_http_flow_create_company_user_login_use_token_refresh):
+    # sin esto, dos tokens emitidos para el mismo usuario+compañía dentro
+    # del mismo segundo son byte-por-byte idénticos — `exp` solo tiene
+    # resolución de segundo y la firma HS256 es determinística sobre un
+    # payload idéntico. Reproducible 100% de las veces en un refresh
+    # inmediato tras el login (flujo normal de cualquier cliente rápido,
+    # no solo de tests). El `jti` garantiza unicidad sin cambiar la
+    # semántica de expiración.
+    payload = {
+        "sub": str(user_id),
+        "company_id": company_id,
+        "type": "access",
+        "exp": expire,
+        "jti": secrets.token_urlsafe(16),
+    }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
