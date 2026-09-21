@@ -168,6 +168,41 @@ incorrecto, reintento de token de un solo uso, autodesactivación
 bloqueada, refresh revocado). Detalle completo de la sesión de `curl` en
 LOG_EJECUCION.md.
 
+## 0.3 Segunda regresión QA externa (sep-2026) — suite scripts/qa_suite/ integrada, 2 bugs reales + brecha docs/código cerrada
+
+`scripts/qa_suite/` (orquestador de 6 etapas), `backend/tests/http/` y
+`backend/tests/property/` vivían fuera del repo — traídos adentro esta
+sesión (commit `4fc7149`). Al correrlos contra `main`, ruff/mypy
+reportaron 171/28 hallazgos pese a que este documento y `QUALITY_SUITE.md`
+daban por hecha una limpieza previa (StrEnum, etc.) — confirmado que esa
+limpieza nunca llegó a `main`. Ver detalle completo de la brecha y de
+cada hallazgo en `LOG_EJECUCION.md`, sección "SEGUNDA REGRESIÓN QA
+EXTERNA (sep-2026)". Resumen ejecutivo:
+
+- **2 bugs reales de comportamiento, no de documentación**: `jti`
+  faltante en `create_access_token` (access token repetible byte a byte
+  en un refresh dentro del mismo segundo, commit `a2e34ba`); y un bug
+  del propio test de propiedades de impuestos (nombre no único por
+  ejemplo de Hypothesis, colisión garantizada con
+  `uq_tax_rates_company_name`, corregido dentro de `4fc7149`).
+- **1 bug de tipos real** (no solo mypy-cosmético): `StockLevel.quantity`/
+  `reserved_quantity`, `StockMovement.quantity`,
+  `EcommerceCartItem.quantity`/`unit_price_snapshot` declaradas
+  `Mapped[float]` sobre columnas `Numeric` cuyo tipo real en runtime es
+  `Decimal` — corregido en `87badb7`.
+- **Dependencias**: `python-multipart` 0.0.20 → 0.0.32 (6 CVEs reales
+  cerrados). `ecdsa` 0.19.2 (Minerva timing attack) queda como **riesgo
+  aceptado y documentado**, no removible sin cambiar de librería JWT
+  (dependencia dura de `python-jose` sin importar el extra) — ver
+  `--ignore-vuln PYSEC-2026-1325` explícito en
+  `scripts/qa_suite/09_dependency_audit.py` (commit `8aba329`).
+- **ruff 171→0, mypy 28→0** (commit `87badb7`) — incluye activar el
+  plugin oficial `pydantic.mypy` en `pyproject.toml`, que resolvió la
+  mayoría de los falsos positivos de un saque.
+- Confirmación final: **268/268 tests** (248 funcionales + 20
+  http/property), cobertura 87.77% (umbral 85%), las 6 etapas de
+  `run_quality_suite.py` en verde por separado.
+
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)

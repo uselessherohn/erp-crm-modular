@@ -2339,3 +2339,114 @@ Resumen de toda la campaña, de Fase 0 a acá:
   contracts/openapi.json`) cuando hizo falta.
 
 Suite final: 248/248, sin regresiones en ningún punto de la campaña.
+
+=================================================================================
+SEGUNDA REGRESIÓN QA EXTERNA (sep-2026) — suite scripts/qa_suite/ integrada al repo
+=================================================================================
+
+## Fase 0 — integración de la suite y primer hallazgo: el repo no reflejaba lo documentado
+
+`scripts/qa_suite/` + `backend/tests/http/` + `backend/tests/property/` vivían
+fuera del repo hasta ahora (entregados como paquete aparte). Primer paso:
+traerlos adentro (commit `4fc7149`) y correrlos contra `main` real.
+
+Resultado inesperado: `ruff check` reportó 171 hallazgos y `mypy` 28 errores —
+pese a que este mismo `QUALITY_SUITE.md`/`STATE.md` documentaban una limpieza
+de lint/types ya cerrada (67 clases refactorizadas a StrEnum, etc.). Confirmado
+por lectura directa de `app/`: 9 clases seguían como `class X(str, enum.Enum)`.
+Conclusión: esa limpieza documentada nunca llegó a `main`, o se hizo sobre un
+branch que no se mergeó. No se investiga más a fondo el porqué — se cierra la
+brecha real entre docs y código en esta misma sesión (ver abajo) y se sigue.
+
+## 2 bugs reales encontrados por la suite (no de documentación — de comportamiento)
+
+1. **`app/core/security.py::create_access_token`** — el `exp` del JWT tiene
+   resolución de segundo; login+refresh dentro del mismo segundo producía un
+   access token nuevo **byte a byte idéntico** al anterior (HS256
+   determinístico sobre payload idéntico). Encontrado por
+   `tests/http/test_auth_flow_http.py::test_full_http_flow_create_company_user_login_use_token_refresh`,
+   reproducido 5/5 en aislado antes del fix. Corregido agregando `jti`
+   aleatorio (commit `a2e34ba`).
+2. **`tests/property/test_accounting_compute_lines_properties.py`** — bug del
+   test, no de la app: reutiliza la misma `company`/sesión para los ~30
+   ejemplos de Hypothesis y nombra cada `TaxRate` sin sufijo único, chocando
+   con `uq_tax_rates_company_name` en cuanto Hypothesis repite un `rate`.
+   Reproducido 5/5 antes del fix (commit `4fc7149`, incluido en la
+   integración porque se corrigió antes del primer commit).
+
+## Auditoría de dependencias (`pip-audit`, nunca corrida antes en este repo)
+
+`python-multipart==0.0.20` con 6 CVEs conocidos (varios DoS reales +
+contrabando de parámetros HTTP vía `;` que sí aplica a
+`request.form()` de Starlette/FastAPI) → subido a `0.0.32`. `ecdsa==0.19.2`
+(Minerva timing attack) investigado a fondo: es dependencia DURA de
+`python-jose` sin importar el extra instalado (probado:
+`python-jose[cryptography]` también la arrastra), sin parche upstream
+planeado. Como esta app firma JWT exclusivamente con HS256, la superficie
+ECDSA nunca se ejerce en runtime — queda como riesgo aceptado, documentado y
+explícitamente ignorado (`--ignore-vuln PYSEC-2026-1325`) en
+`scripts/qa_suite/09_dependency_audit.py`, no silenciado sin más (commit
+`8aba329`).
+
+## Lint (ruff) y tipos (mypy) — cierre real de la brecha con QUALITY_SUITE.md
+
+Ruff 171 → 0: las 67 clases `class X(str, enum.Enum)` → `enum.StrEnum`
+(`--unsafe-fixes`, verificado con la suite completa de 268 tests antes y
+después de aplicarlo), autofixes seguros de imports/timezone/Decimal, y 6
+hallazgos manuales sin autofix (variable ambigua, `import abc` movido al tope
+de archivo x2, atributo de clase mutable, carácter unicode ambiguo en
+comentario) — más los mismos 3 tipos de hallazgo manual replicados en
+`scripts/qa_suite`, que tampoco se había linteado nunca.
+
+mypy 28 → 0: el hallazgo con más apalancamiento fue activar el plugin
+oficial `pydantic.mypy` en `pyproject.toml` (no estaba configurado) — sin él,
+mypy da falsos positivos reales de "Missing named argument" en cualquier
+campo con default vía `Field(None, ...)` con alguna otra restricción bajo
+`from __future__ import annotations` (confirmado con un repro mínimo aislado
+antes de tocar nada). Resolvió 9 de 11 errores de un saque.
+
+De los 2 reales que quedaron: **bug de tipos real** en
+`app/inventory/models.py` y `app/ecommerce/models.py` — 5 columnas
+`Numeric(...)` declaradas `Mapped[float]` cuando el tipo real en runtime es
+`Decimal` (`StockLevel.quantity`/`reserved_quantity`, `StockMovement.quantity`,
+`EcommerceCartItem.quantity`/`unit_price_snapshot`) — corregido a
+`Mapped[Decimal]`. Y un caso donde el primer instinto fue el equivocado:
+`ClinicalRecordService.create_entry()` declaraba devolver
+`models.ClinicalRecordEntry` pero en runtime siempre devolvió
+`schemas.ClinicalRecordEntryRead` (contenido ya desencriptado). Cambiar el
+RUNTIME para que calzara con la anotación rompió
+`test_clinical_record_entry_encrypted_at_rest` — revertido a tiempo; el
+comportamiento real era el correcto, solo la anotación estaba mal. Fix final:
+únicamente la firma de tipos, cero cambio de comportamiento.
+
+Commit único `87badb7` para todo el paquete ruff+mypy (50 archivos) —
+verificado con la suite completa de 268 tests después de cada cambio de
+sustancia (los 2 bugs de tipos reales, el revert de `create_entry`), no solo
+al final.
+
+## Cosmético — `scripts/qa_suite/run_quality_suite.py`
+
+El mensaje final `"🎉 Las 6 etapas... terminaron en verde"` se imprimía
+incluso corriendo una sola etapa con `--stage` — corregido para reflejar
+cuántas etapas realmente corrieron. Y una anotación de tipo inválida
+(`"callable[[], int]"` como string, en vez de `Callable[[], int]`) que el
+propio mypy marcaba sobre el orquestador — corregida (mismo commit `4fc7149`,
+ya incluida al integrar porque se arregló antes del primer commit).
+
+## Confirmación final, las 6 etapas por separado
+
+`01_coverage` (268 tests, 87.77%, umbral 85%) ✓ · `02_permission_audit`
+(149/149, sin fantasmas) ✓ · `03_alembic_downgrade` (31/31 migraciones bajan
+y suben limpio) ✓ · `04_lint_and_types` (ruff + mypy en 0) ✓ ·
+`05_sql_injection_audit` (sin inyección real, solo nombres de tabla
+literales en migraciones, revisados caso por caso) ✓ · `frontend` (npm build
++ vitest, 21/21 archivos, 35/35 tests, requiere sembrar "El Roble" vía
+`/internal/companies` + `bootstrap_admin.py` antes de correr, como ya
+documentaba este mismo log) ✓ · `deps-audit` (0 CVEs sin triage) ✓ ·
+`http`/`property` (20/20) ✓. Suite completa: **268/268**, sin regresiones.
+
+Nota de proceso: un intento de corrida end-to-end de las 6 etapas seguidas se
+cortó a mitad de camino porque el entorno (Postgres + backend levantado a
+mano para el frontend) se cayó durante una espera larga — falso negativo en
+la etapa `frontend`, no una regresión real; re-confirmado limpio corriendo
+esa etapa sola con el entorno sano de nuevo.

@@ -246,14 +246,32 @@ alembic upgrade head
 uvicorn app.main:app --reload
 
 # en otra terminal
-pytest tests/ -q   # 185 tests; ver nota abajo sobre el estado real de la corrida
+pytest tests/ -q   # 268 tests (248 funcionales + 20 http/property); ver nota abajo
 
 # Frontend
 cd frontend
 npm install
 npx tsc --noEmit    # limpio
 npm run build       # exitoso
-npx vitest run       # suite de integración real contra el backend de arriba
+# los tests de integración del frontend necesitan la compañía semilla "El Roble"
+# contra el backend de arriba (una sola vez):
+#   curl -X POST http://127.0.0.1:8000/internal/companies \
+#     -H "Content-Type: application/json" -H "X-Internal-Api-Key: <INTERNAL_API_KEY del .env>" \
+#     -d '{"name": "El Roble"}'
+#   python -m scripts.bootstrap_admin   # (desde backend/, con el venv activo)
+npx vitest run       # 21 archivos / 35 tests, suite de integración real contra el backend de arriba
+```
+
+**Suite de calidad completa** (`scripts/qa_suite/`, integrada al repo en
+sep-2026 — ver `QUALITY_SUITE.md`): cobertura, auditoría de permisos RBAC,
+`alembic downgrade` migración por migración, `ruff`+`mypy`, auditoría de SQL
+crudo, build+tests de frontend, tests HTTP reales, property-based testing
+(Hypothesis) y `pip-audit` de dependencias — todo en un solo comando:
+
+```bash
+python scripts/qa_suite/run_quality_suite.py          # las 6 etapas en orden
+python scripts/qa_suite/run_quality_suite.py --stage baseline   # una sola etapa
+python scripts/qa_suite/run_quality_suite.py --list              # listar etapas
 ```
 
 **Nota sobre la última corrida real de `pytest tests/`** (actualizada,
@@ -275,6 +293,13 @@ real (`StockService.record_movement`) al fixture. **Confirmado: 144/144
 tests en verde** contra Postgres real, base recreada de cero
 (`DROP DATABASE`→`CREATE DATABASE`→`alembic upgrade head`), incluyendo
 las 25 migraciones previas más `a1c4f0e2b9d7` (módulo 15).
+
+**Segunda regresión QA externa (sep-2026)** — con `scripts/qa_suite/` ya
+integrado: **268/268 tests** (248 funcionales + 20 http/property),
+cobertura 87.77% (umbral 85%), `ruff`/`mypy` en 0 (venían de 171/28
+hallazgos — ver `LOG_EJECUCION.md` para el detalle completo de cada uno),
+0 CVEs sin triage en dependencias, y las 6 etapas de
+`run_quality_suite.py` en verde por separado.
 
 ## Qué leer según lo que necesites
 
@@ -341,3 +366,20 @@ entorno real en cada cierre en vez de confiar en la revisión de código:
 
 Todos estos hallazgos, con el detalle completo de cómo se reprodujeron y
 corrigieron, están documentados en `LOG_EJECUCION.md`.
+
+- **Access token JWT repetible byte a byte**: `create_access_token` firmaba
+  con `exp` de resolución de segundo — un login+refresh dentro del mismo
+  segundo producía el mismo access token dos veces (HS256 determinístico
+  sobre payload idéntico). Encontrado por la segunda regresión QA externa
+  (sep-2026, `tests/http/`), corregido agregando un `jti` aleatorio.
+- **Columnas monetarias/de cantidad mal tipadas**: `StockLevel.quantity`,
+  `reserved_quantity`, `StockMovement.quantity`,
+  `EcommerceCartItem.quantity`/`unit_price_snapshot` declaradas
+  `Mapped[float]` sobre columnas `Numeric` cuyo tipo real en runtime
+  siempre fue `Decimal` — encontrado por mypy en la misma sesión, corregido
+  sin cambio de comportamiento.
+- **Brecha real entre lo documentado y lo que había en `main`**: este mismo
+  documento y `QUALITY_SUITE.md` daban por cerrada una limpieza de
+  lint/types (67 clases a `StrEnum`, etc.) que en realidad nunca llegó a
+  `main` — 171 hallazgos de `ruff` y 28 de `mypy` esperaban ahí. Cerrado en
+  la misma sesión; detalle completo en `LOG_EJECUCION.md`.

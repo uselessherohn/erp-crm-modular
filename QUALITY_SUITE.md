@@ -11,6 +11,18 @@ No reemplaza `pytest tests/` (los 248 tests funcionales) — lo complementa.
 Vive en `scripts/qa_suite/` + `backend/tests/http/` +
 `backend/tests/property/`.
 
+> **Nota (sep-2026, segunda sesión)**: este documento describe la corrida
+> *original* de la suite, hecha antes de que `scripts/qa_suite/` se
+> integrara al repo — sus fixes (StrEnum, etc.) nunca llegaron a `main`.
+> Al integrar la suite y correrla de nuevo contra `main` real, `ruff`
+> volvió a marcar 171 hallazgos y `mypy` 28 (ver `LOG_EJECUCION.md`,
+> sección "SEGUNDA REGRESIÓN QA EXTERNA"). Esta segunda pasada además
+> encontró 2 bugs reales de comportamiento (no solo de lint/types) vía
+> `tests/http/` y `tests/property/`, un bug de tipos real en columnas
+> `Numeric` mal declaradas `float`, y activó el plugin `pydantic.mypy`
+> (no configurado hasta entonces) — todo cerrado y confirmado con la
+> suite completa (268/268: 248 funcionales + 20 http/property).
+
 ## Las 6 etapas
 
 Cada etapa es un punto natural de commit/push — mismo ritmo que la
