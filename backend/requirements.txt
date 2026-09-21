@@ -12,8 +12,19 @@ pydantic_core==2.46.4
 pyotp==2.10.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
+# NOTA (auditoría de dependencias, sep-2026): python-jose declara `ecdsa`
+# como dependencia DURA (no opcional/extra) sin importar qué extra se
+# instale — probado: `python-jose[cryptography]` sigue arrastrando
+# `ecdsa`. PYSEC-2026-1325 (timing attack Minerva sobre P-256) queda
+# como riesgo aceptado y documentado en STATE.md: esta app firma
+# exclusivamente con HS256 (app/core/security.py), así que la superficie
+# ECDSA de `ecdsa` nunca se ejerce en runtime. Sin parche disponible
+# upstream a la fecha.
 python-jose==3.5.0
-python-multipart==0.0.20
+# 0.0.20 tenía 6 CVEs conocidos (varios DoS reales de parsing +
+# PYSEC-2026-3037, contrabando de parámetros HTTP vía `;` como separador
+# que sí aplica a `request.form()` de Starlette/FastAPI) — mismo hallazgo.
+python-multipart==0.0.32
 SQLAlchemy==2.0.52
 uvicorn==0.52.4
 # Agregados en el cierre del módulo 24 (reports) — Exportación de Datos
