@@ -15,7 +15,8 @@ from typing import ClassVar
 
 import pyotp
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -702,6 +703,33 @@ class IdempotencyService:
     }
 
     @staticmethod
+    async def _reapply_rls_tenant_context(db: AsyncSession, company_id: int) -> None:
+        """BUG REAL, preexistente y más profundo que los otros dos, encontrado
+        por scripts/qa_suite/11_concurrency_load.py (escenario 2): Postgres
+        trata `SET`/`set_config(..., is_local=false)` como transaccional
+        pese al nombre — si el GUC se fijó como parte de la MISMA
+        transacción que después se revierte con `ROLLBACK`, el valor
+        vuelve a lo que era antes de esa transacción (típicamente vacío, en
+        una conexión recién salida del pool). Como
+        `get_public_db_context`/`get_db` fijan `app.current_company_id`
+        como el PRIMER statement de la sesión — es decir, dentro de la
+        misma transacción que todo lo demás — cualquier `db.rollback()` a
+        mitad de un request revierte silenciosamente el aislamiento RLS
+        para el resto de esa sesión. Confirmado en producción de este bug:
+        tras el rollback de un `DomainError` (ej. "carrito ya procesado"),
+        el INSERT subsiguiente en `idempotency_keys` fallaba con
+        `InsufficientPrivilegeError` (política RLS) o, peor,
+        `InvalidTextRepresentationError: invalid input syntax for type
+        bigint: ""` si algún DEFAULT/policy castea el GUC ya vacío. No es
+        exclusivo de este servicio — CUALQUIER código que haga
+        `db.rollback()` y siga usando la misma sesión está expuesto. Se
+        corrige acá, en el único lugar de `run_command` donde se hace
+        rollback y se sigue usando la sesión; una auditoría más amplia de
+        otros `db.rollback()` intermedios en el resto de la app queda
+        anotada como seguimiento en STATE.md."""
+        await db.execute(text("SELECT set_config('app.current_company_id', :cid, false)"), {"cid": str(company_id)})
+
+    @staticmethod
     def hash_payload(payload: dict) -> str:
         # sort_keys=True + default=str: determinístico sin importar el
         # orden de construcción del dict ni tipos no serializables nativos
@@ -812,32 +840,96 @@ class IdempotencyService:
             # de persistir el registro de idempotencia, para no dejar la
             # sesión en un estado inconsistente en el siguiente uso.
             await db.rollback()
-            await IdempotencyService.persist_response(
-                db,
-                company_id=company_id,
-                idempotency_key=idempotency_key,
-                endpoint=endpoint,
-                request_hash=request_hash,
-                domain=domain,
-                response_status_code=exc.status_code,
+            await IdempotencyService._reapply_rls_tenant_context(db, company_id)
+            replay = await IdempotencyService._persist_or_yield_to_winner(
+                db, company_id=company_id, idempotency_key=idempotency_key, endpoint=endpoint,
+                request_hash=request_hash, domain=domain, response_status_code=exc.status_code,
                 response_body={"error": {"code": exc.error_code, "message": exc.message, "details": exc.details}},
             )
-            await db.commit()
+            if replay is not None:
+                if replay.response_status_code >= 400:
+                    raise HTTPException(status_code=replay.response_status_code, detail=replay.response_snapshot) from exc
+                return replay.response_snapshot
             raise
 
         response_body = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
-        await IdempotencyService.persist_response(
-            db,
-            company_id=company_id,
-            idempotency_key=idempotency_key,
-            endpoint=endpoint,
-            request_hash=request_hash,
-            domain=domain,
-            response_status_code=success_status_code,
-            response_body=response_body,
+        replay = await IdempotencyService._persist_or_yield_to_winner(
+            db, company_id=company_id, idempotency_key=idempotency_key, endpoint=endpoint,
+            request_hash=request_hash, domain=domain, response_status_code=success_status_code, response_body=response_body,
         )
-        await db.commit()
+        if replay is not None:
+            if replay.response_status_code >= 400:
+                raise HTTPException(status_code=replay.response_status_code, detail=replay.response_snapshot)
+            return replay.response_snapshot
         return result
+
+    @staticmethod
+    async def _persist_or_yield_to_winner(
+        db: AsyncSession,
+        *,
+        company_id: int,
+        idempotency_key: str,
+        endpoint: str,
+        request_hash: str,
+        domain: str,
+        response_status_code: int,
+        response_body: dict,
+    ) -> models.IdempotencyKey | None:
+        """BUG REAL encontrado por scripts/qa_suite/11_concurrency_load.py
+        (escenario 2, concurrencia real — no simulada): entre `get_replay`
+        (SELECT sin lock) y el INSERT de `persist_response` hay una ventana
+        real de carrera. Bajo N requests verdaderamente concurrentes con la
+        MISMA Idempotency-Key, más de uno puede pasar el `get_replay` inicial
+        viendo "no existe todavía" y terminar compitiendo por el mismo INSERT
+        — el perdedor de esa carrera, antes de este fix, propagaba
+        `IntegrityError` sin capturar como un 500 espurio (reproducido 14/20
+        veces con concurrencia real de 20 requests).
+
+        Este método intenta persistir la respuesta LOCAL; si pierde la
+        carrera (UniqueViolation en la constraint de
+        company_id+idempotency_key+endpoint), se rinde ante lo que la
+        transacción ganadora ya comprometió — se relee esa fila y se
+        devuelve, en vez de propagar el error de integridad. `command()` ya
+        se ejecutó de un lado u otro en ambas ramas (helper llamado tanto
+        tras éxito como tras `DomainError`), así que ceder ante el ganador
+        real es correcto: solo debe existir UNA respuesta "canónica" para
+        una Idempotency-Key dada, sin importar cuál transacción individual
+        llegó primero a este método.
+
+        Nota de diseño (no resuelta acá, fuera de alcance de un fix
+        quirúrgico): en el caso específico donde la transacción que SÍ
+        ejecutó la operación de negocio con éxito pierde la carrera de
+        persistencia contra una que falló rápido (ej. "carrito ya
+        convertido"), el llamador recibiría la respuesta de error pese a que
+        el efecto de negocio (ej. la orden) sí se creó. Este fix elimina el
+        crash real (500) y la inconsistencia de "más de una respuesta
+        distinta para la misma clave", que eran los dos hallazgos
+        confirmados; una serialización completa (lock/claim antes de
+        ejecutar `command()`) sería necesaria para cerrar también esa
+        ventana teórica, y queda registrada como trabajo futuro en
+        STATE.md."""
+        try:
+            await IdempotencyService.persist_response(
+                db, company_id=company_id, idempotency_key=idempotency_key, endpoint=endpoint,
+                request_hash=request_hash, domain=domain,
+                response_status_code=response_status_code, response_body=response_body,
+            )
+            await db.commit()
+            return None
+        except IntegrityError:
+            await db.rollback()
+            await IdempotencyService._reapply_rls_tenant_context(db, company_id)
+            winner = await IdempotencyService.get_replay(
+                db, company_id=company_id, idempotency_key=idempotency_key, endpoint=endpoint, request_hash=request_hash,
+            )
+            if winner is None:
+                # No debería pasar (perdimos un INSERT contra ALGUIEN), pero
+                # si la fila ganadora ya expiró/no está, no hay nada más
+                # seguro que hacer que dejar que el IntegrityError original
+                # se propague — mejor un 500 visible que ocultar un estado
+                # que no se entiende.
+                raise
+            return winner
 
 
 # ---------------------------------------------------------------------------

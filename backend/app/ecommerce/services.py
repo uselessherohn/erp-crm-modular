@@ -12,7 +12,8 @@ import secrets
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounting import schemas as accounting_schemas
@@ -151,10 +152,31 @@ class CartService:
         return cart, token
 
     @staticmethod
-    async def _get_cart_row(db: AsyncSession, *, company_id: int, cart_id: int, session_token: str) -> models.Cart:
-        result = await db.execute(
-            select(models.Cart).where(models.Cart.company_id == company_id, models.Cart.id == cart_id)
-        )
+    async def _get_cart_row(
+        db: AsyncSession, *, company_id: int, cart_id: int, session_token: str, for_update: bool = False
+    ) -> models.Cart:
+        stmt = select(models.Cart).where(models.Cart.company_id == company_id, models.Cart.id == cart_id)
+        if for_update:
+            # BUG REAL encontrado por scripts/qa_suite/11_concurrency_load.py
+            # (escenario 2, concurrencia real): sin este lock, N checkouts
+            # concurrentes del MISMO carrito pasaban TODOS el chequeo
+            # `cart.status != "open"` (ninguno había comprometido su cambio
+            # de estado todavía) y cada uno ejecutaba el flujo COMPLETO de
+            # creación de orden — confirmado empíricamente: 20 checkouts
+            # concurrentes con el mismo carrito crearon 15 SalesOrder reales
+            # distintos (con su propia reserva de stock, factura y asientos
+            # contables cada uno), pese a que la respuesta HTTP de las 20
+            # llamadas mostraba, gracias a la capa de idempotencia, el MISMO
+            # `sales_order_id` — la idempotencia estaba ocultando el
+            # problema en vez de prevenirlo: el trabajo duplicado real ya
+            # había ocurrido en la base antes de que la respuesta se
+            # cacheara. `with_for_update()` serializa las N transacciones en
+            # esta lectura — la primera en llegar mantiene el lock hasta su
+            # commit (que dejó `status="checked_out"`), y cada una de las
+            # siguientes, al desbloquear, ve el estado ya actualizado y
+            # sale por `ConflictError` antes de crear nada.
+            stmt = stmt.with_for_update()
+        result = await db.execute(stmt)
         cart = result.scalar_one_or_none()
         # Mensaje deliberadamente genérico (no distingue "no existe" de
         # "token incorrecto") — anti-enumeración del mismo tipo que el
@@ -212,25 +234,44 @@ class CheckoutService:
         """Mismo criterio de reutilización por email que
         `website.FormSubmissionService` (módulo 22, DED-46) — reutiliza un
         `Contact` existente marcándolo `is_customer=true` si no lo era, en
-        vez de duplicar."""
-        result = await db.execute(select(Contact).where(Contact.company_id == company_id, Contact.email == email))
-        contact = result.scalar_one_or_none()
-        if contact is not None:
-            if not contact.is_customer:
-                contact.is_customer = True
-                await db.flush()
-            return contact
+        vez de duplicar.
 
-        contact = Contact(company_id=company_id, name=name, email=email, phone=phone, is_customer=True)
-        db.add(contact)
-        await db.flush()
+        BUG REAL encontrado por scripts/qa_suite/11_concurrency_load.py
+        (escenario 2, concurrencia real): esto era un SELECT-luego-INSERT
+        (check-then-act) sin ningún lock — dos checkouts concurrentes con
+        el MISMO email (ej. el mismo cliente haciendo doble clic, o el
+        propio reintento del cliente ante un timeout) podían ver ambos "no
+        existe todavía" y competir por el mismo INSERT. El perdedor de esa
+        carrera contra el índice único parcial `ux_contacts_company_email`
+        propagaba un `IntegrityError` crudo — ni siquiera un `DomainError`,
+        así que ni `IdempotencyService.run_command` lo capturaba — como un
+        500 real (confirmado: dominaba los 500 observados en el escenario
+        2, más que la carrera de idempotencia en sí). Mismo patrón UPSERT
+        que `StockService._get_or_create_lot` — un duplicado concurrente
+        simplemente no inserta (`ON CONFLICT DO NOTHING` sobre el mismo
+        índice parcial `(company_id, email) WHERE email IS NOT NULL`) y el
+        SELECT posterior trae la fila real, sea la que insertamos nosotros
+        o la que ganó la otra transacción."""
+        stmt = (
+            pg_insert(Contact)
+            .values(company_id=company_id, name=name, email=email, phone=phone, is_customer=True)
+            .on_conflict_do_nothing(index_elements=["company_id", "email"], index_where=text("email IS NOT NULL"))
+        )
+        await db.execute(stmt)
+        result = await db.execute(select(Contact).where(Contact.company_id == company_id, Contact.email == email))
+        contact = result.scalar_one()
+        if not contact.is_customer:
+            contact.is_customer = True
+            await db.flush()
         return contact
 
     @staticmethod
     async def checkout(
         db: AsyncSession, *, company_id: int, cart_id: int, session_token: str, payload: schemas.CheckoutRequest
     ) -> schemas.CheckoutResult:
-        cart = await CartService._get_cart_row(db, company_id=company_id, cart_id=cart_id, session_token=session_token)
+        cart = await CartService._get_cart_row(
+            db, company_id=company_id, cart_id=cart_id, session_token=session_token, for_update=True
+        )
         if cart.status != "open":
             raise ConflictError(f"El carrito {cart_id} ya fue procesado (estado: '{cart.status}')")
 
