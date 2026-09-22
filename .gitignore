@@ -21,3 +21,5 @@ frontend/.vite/
 *.swp
 backend/mutants/
 backend/.mutmut-cache
+frontend/playwright-report/
+frontend/test-results/
