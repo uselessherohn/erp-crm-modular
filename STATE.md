@@ -203,6 +203,91 @@ EXTERNA (sep-2026)". Resumen ejecutivo:
   http/property), cobertura 87.77% (umbral 85%), las 6 etapas de
   `run_quality_suite.py` en verde por separado.
 
+## 0.4 Suite de calidad extendida (sep-2026) — 6 etapas nuevas, 5 bugs reales más
+
+Rama `test/extended-qa-suite` — a pedido explícito, diseñada para que un
+agente LLM con acceso a red la corra sola de punta a punta (ver
+`AGENT_RUNBOOK.md`, el documento operativo completo). Suma 6 etapas al
+orquestador (`security`, `concurrency`, `secrets-audit`,
+`rate-limit-audit`, `backup-restore`, `mutation` — esta última opcional,
+no corre en el "todas las etapas" por defecto).
+
+- **`tests/security/`** (66 tests, 1 skip esperado): aislamiento
+  multi-tenant (IDOR) vía HTTP real con dos compañías reales — 6 recursos
+  curados (contacts, inventory/product, hr/employee, pipeline/
+  opportunity, sales/sales_order, medical/clinical_record_entry) más un
+  crawler automático sobre las 54 rutas parametrizadas de la API. Todo en
+  verde — sin hallazgos de aislamiento.
+- **`11_concurrency_load.py`** — concurrencia real (no simulada) contra
+  un uvicorn real. Encontró y corrigió **4 bugs de concurrencia reales
+  encadenados**: (1) carrera check-then-act en `IdempotencyService.
+  run_command` (500 real); (2) misma clase de bug en
+  `CheckoutService._find_or_create_customer_contact` (dominaba los 500
+  observados); (3) **el más serio**: `CartService` nunca bloqueaba el
+  carrito antes de checkout — 20 checkouts simultáneos del mismo carrito
+  podían crear hasta 15 SalesOrder reales distintos, ocultado por la capa
+  de idempotencia en vez de prevenido — corregido con `SELECT FOR UPDATE`
+  real; (4) **el más profundo y preexistente**: Postgres trata
+  `set_config(..., is_local=false)` como transaccional pese al nombre —
+  un `db.rollback()` a mitad de un request revierte silenciosamente
+  `app.current_company_id` (el GUC de RLS). Corregido en los dos puntos
+  donde `IdempotencyService` hace rollback intermedio; **una auditoría
+  más amplia de otros `db.rollback()` intermedios en el resto de la app
+  queda pendiente** (candidato: cualquier service que capture una
+  excepción, haga rollback, y siga usando la misma sesión después).
+  Hallazgo residual documentado pero no corregido (requiere serializar
+  la ejecución completa de `command()` detrás de un lock, no solo la
+  persistencia del resultado): bajo la carrera de (1), la respuesta
+  "canónica" cacheada puede terminar siendo la de un error aunque la
+  operación haya tenido éxito en algún lado — el script lo reporta como
+  advertencia no bloqueante, no como fallo.
+- **`15_secrets_audit.py`** — 0 hallazgos reales (working tree +
+  historial completo de git).
+- **`16_rate_limit_audit.py`** — **hallazgo real confirmado**: no hay
+  rate-limiting por IP en `/auth/login` (el lockout de
+  `AuthService.MAX_FAILED_ATTEMPTS` es por cuenta individual, no protege
+  contra un atacante probando contraseñas comunes contra muchos emails
+  distintos). El canal lateral de tiempo que se sospechaba (bcrypt solo
+  corre si el email existe) no se confirmó empíricamente en este entorno
+  (diferencia de 4.3ms, por debajo del umbral de 20ms) — sin hallazgo ahí,
+  pero vale re-correr en un entorno con otro cost factor de bcrypt.
+- **`17_backup_restore_drill.py`** — simulacro real verificado exitoso
+  (dump, restore, alembic upgrade no-op, conteo de filas idéntico, JOIN
+  real contra la base restaurada).
+- **`tests/property/test_sales_order_state_machine.py`** — fuzzing de
+  secuencias de transiciones de estado (Hypothesis) contra el ciclo de
+  vida real de SalesOrder — confirma que toda transición inválida se
+  rechaza sin efectos parciales y que `quantity_shipped` nunca supera
+  `quantity` sin importar la secuencia. Encontró (y se corrigieron) 2
+  bugs del propio test — mismo patrón de nombre-no-único-entre-ejemplos
+  de Hypothesis ya visto en `test_accounting_compute_lines_properties.py`.
+- **`12_mutation_testing.py`** + `[tool.mutmut]` en `pyproject.toml` —
+  acotado a `app/core/security.py` contra un subconjunto rápido de tests
+  (~5s). Verificado: 70 mutantes, 54 eliminados (77%), 16 sobrevivientes
+  a revisar.
+- **`frontend/tests/e2e/`** (Playwright) — scaffold de login + flujo
+  crítico (factura → pago), con un seed en Python
+  (`seed_invoice_ready_to_pay.py`) que reproduce la cadena completa
+  contacto→producto→orden→confirmar→enviar→facturar→factura contable→
+  contabilizar — **verificado en vivo end-to-end**. Los specs de
+  Playwright en sí **no se pudieron correr** en el entorno donde se
+  armó esta suite (`cdn.playwright.dev`, de donde se descarga el
+  binario de Chromium, fuera del allowlist de red — confirmado con un
+  intento real de instalación) — type-checkan limpio y sus selectores
+  se confirmaron leyendo los componentes reales, pero la primera corrida
+  contra un navegador real queda pendiente.
+- **Hallazgo real, no de concurrencia, encontrado armando el seed de
+  Playwright**: `SalesOrderService.invoice()` solo cambia el status de la
+  orden a `'facturado'` — **no crea ninguna fila en `accounting.Invoice`**.
+  La factura contable real es una acción manual separada
+  (`InvoiceService.create_draft()`, vía `source_document_type`/
+  `source_document_id`) que la UI de Facturación tendría que disparar
+  aparte. Pendiente confirmar si es el comportamiento intencional
+  (dos pasos deliberadamente separados) o un gap real de UX/integración.
+
+Documento operativo completo, pensado para que un agente lo siga sin
+supervisión: `AGENT_RUNBOOK.md`.
+
 ## 1. Paquetes y módulos completados
 - Núcleo: core (✓), contacts (✓)
 - Administrativo: inventory (✓), purchasing (✓), sales (✓), accounting (✓), pipeline (✓), hr (✓)
