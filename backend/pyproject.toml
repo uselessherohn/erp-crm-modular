@@ -82,3 +82,20 @@ exclude = ["alembic/versions/"]
 # archivo por archivo.
 module = "alembic.*"
 ignore_errors = true
+
+[tool.mutmut]
+# Mutation testing curado a un subconjunto de alto valor — correr contra
+# los 92 archivos de app/ es impracticable (cada mutante re-corre tests,
+# y la suite completa tarda ~350s; con miles de mutantes posibles eso son
+# días de cómputo). Se elige security.py (hashing de passwords, JWT) como
+# primer módulo: es pequeño, crítico, y tiene su propio archivo de tests
+# rápido y aislado (tests/property/test_security_properties.py, sin DB)
+# — cada mutante corre en segundos, no minutos. Ver
+# scripts/qa_suite/12_mutation_testing.py para instrucciones de cómo
+# extender esto a otro módulo.
+source_paths = ["app"]
+only_mutate = ["app/core/security.py"]
+pytest_add_cli_args_test_selection = [
+    "tests/test_core_module.py", "-k", "token or refresh or login",
+    "tests/property/test_security_properties.py", "-q",
+]

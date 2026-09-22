@@ -19,3 +19,5 @@ frontend/.vite/
 # OS / editor
 .DS_Store
 *.swp
+backend/mutants/
+backend/.mutmut-cache
