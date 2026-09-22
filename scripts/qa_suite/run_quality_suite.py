@@ -8,20 +8,31 @@ confirmar en verde, commitear, seguir.
 Etapas (ver QUALITY_SUITE.md para el detalle de qué cubre cada una y por
 qué están agrupadas así):
 
-  1  baseline   — cobertura, auditoría de permisos, downgrade de alembic,
-                  lint + types. Todo local, sin red, minutos.
-  2  sql-audit  — auditoría de SQL crudo / posible inyección.
-  3  frontend   — build + vitest del frontend (nunca corrido en esta
-                  regresión — fue 100% backend).
-  4  http       — tests a nivel HTTP real (servidor real + httpx), no
-                  solo llamadas directas a servicios.
-  5  property   — property-based testing (hypothesis) sobre cálculos
-                  financieros.
-  6  deps-audit — pip-audit sobre requirements.txt (CVEs conocidos).
+  1  baseline          — cobertura, auditoría de permisos, downgrade de
+                          alembic, lint + types. Todo local, sin red, minutos.
+  2  sql-audit         — auditoría de SQL crudo / posible inyección.
+  3  frontend          — build + vitest del frontend.
+  4  http              — tests a nivel HTTP real (servidor real + httpx).
+  5  property          — property-based testing (hypothesis) sobre
+                          cálculos financieros y la máquina de estados de
+                          SalesOrder.
+  6  deps-audit        — pip-audit sobre requirements.txt (CVEs conocidos).
+  7  security          — aislamiento multi-tenant (IDOR), HTTP real.
+  8  concurrency       — concurrencia real contra un backend ya levantado
+                          (oversell de stock, idempotencia bajo carrera real).
+  9  secrets-audit     — secretos en el working tree y el historial completo
+                          de git.
+  10 rate-limit-audit  — fuerza bruta / timing side-channel en /auth/login,
+                          contra un backend ya levantado.
+  11 backup-restore    — simulacro real de pg_dump + restore + verificación.
+
+  (opcional, no corre en el orden por defecto — ver --stage mutation)
+  12 mutation          — mutation testing (mutmut) sobre app/core/security.py.
 
 Uso:
     python scripts/qa_suite/run_quality_suite.py --stage baseline
-    python scripts/qa_suite/run_quality_suite.py --stage sql-audit
+    python scripts/qa_suite/run_quality_suite.py --stage security
+    python scripts/qa_suite/run_quality_suite.py --stage mutation
     python scripts/qa_suite/run_quality_suite.py --list
 
 Por defecto corre TODAS las etapas en orden y se detiene en la primera que
@@ -94,6 +105,33 @@ def stage_deps_audit() -> int:
     return _py("09_dependency_audit.py")
 
 
+def stage_security() -> int:
+    return _pytest("tests/security/", "-v")
+
+
+def stage_concurrency() -> int:
+    print("! Requiere un backend real ya corriendo en http://127.0.0.1:8000 (uvicorn app.main:app) — no lo levanta esta etapa.")
+    return _py("11_concurrency_load.py")
+
+
+def stage_secrets_audit() -> int:
+    return _py("15_secrets_audit.py")
+
+
+def stage_rate_limit_audit() -> int:
+    print("! Requiere un backend real ya corriendo en http://127.0.0.1:8000 (uvicorn app.main:app) — no lo levanta esta etapa.")
+    return _py("16_rate_limit_audit.py")
+
+
+def stage_backup_restore() -> int:
+    return _py("17_backup_restore_drill.py")
+
+
+def stage_mutation() -> int:
+    print("! Exploratoria, no bloqueante — tarda varios minutos incluso acotada. Ver scripts/qa_suite/12_mutation_testing.py.")
+    return _py("12_mutation_testing.py")
+
+
 def _run_steps(steps: list[tuple[str, Callable[[], int]]]) -> int:
     for label, fn in steps:
         print(f"\n{'=' * 70}\n{label}\n{'=' * 70}")
@@ -109,23 +147,39 @@ STAGES = [
     Stage("sql-audit", "2. Auditoría de SQL crudo", stage_sql_audit),
     Stage("frontend", "3. Frontend (build + vitest)", stage_frontend),
     Stage("http", "4. Tests a nivel HTTP real", stage_http),
-    Stage("property", "5. Property-based testing (hypothesis)", stage_property),
+    Stage("property", "5. Property-based testing (hypothesis) — incluye la máquina de estados de SalesOrder", stage_property),
     Stage("deps-audit", "6. Auditoría de dependencias (CVEs)", stage_deps_audit),
+    Stage("security", "7. Aislamiento multi-tenant (IDOR)", stage_security),
+    Stage("concurrency", "8. Concurrencia real (requiere backend levantado)", stage_concurrency),
+    Stage("secrets-audit", "9. Auditoría de secretos (working tree + historial de git)", stage_secrets_audit),
+    Stage("rate-limit-audit", "10. Rate-limiting / timing side-channel en login (requiere backend levantado)", stage_rate_limit_audit),
+    Stage("backup-restore", "11. Simulacro de backup/restore", stage_backup_restore),
 ]
+
+# Excluida del "correr todas las etapas" por defecto — exploratoria, no un
+# gate binario pasa/no-pasa (ver 12_mutation_testing.py), y tarda minutos
+# incluso acotada. Se corre a propósito con --stage mutation.
+OPTIONAL_STAGES = [
+    Stage("mutation", "12. Mutation testing (mutmut, exploratoria — no bloqueante)", stage_mutation),
+]
+
+ALL_STAGE_KEYS = [s.key for s in STAGES] + [s.key for s in OPTIONAL_STAGES]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--stage", choices=[s.key for s in STAGES], help="Correr solo esta etapa")
+    parser.add_argument("--stage", choices=ALL_STAGE_KEYS, help="Correr solo esta etapa (incluye las opcionales, ej. mutation)")
     parser.add_argument("--list", action="store_true", help="Listar etapas y salir")
     args = parser.parse_args()
 
     if args.list:
-        for s in STAGES:
-            print(f"{s.key:12} {s.label}")
+        for s in STAGES + OPTIONAL_STAGES:
+            suffix = "  (opcional, no corre por defecto)" if s in OPTIONAL_STAGES else ""
+            print(f"{s.key:18} {s.label}{suffix}")
         return 0
 
-    stages_to_run = [s for s in STAGES if s.key == args.stage] if args.stage else STAGES
+    all_defined = STAGES + OPTIONAL_STAGES
+    stages_to_run = [s for s in all_defined if s.key == args.stage] if args.stage else STAGES
 
     for stage in stages_to_run:
         print(f"\n{'#' * 70}\n# {stage.label}\n{'#' * 70}")
